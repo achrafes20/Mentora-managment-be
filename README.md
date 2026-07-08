@@ -19,7 +19,13 @@ workspace/
 2. Depuis `Mentora-managment-be/` : `cp .env.example .env`, puis renseigner
    les valeurs locales (les valeurs par défaut suffisent pour un premier
    lancement).
-3. `docker compose up` (ou `make up`) — démarre les 5 services : `db`
+3. `make install-hooks` — installe le hook pre-commit (Spotless +
+   Checkstyle). **Étape manuelle à refaire à chaque clone** : contrairement
+   au frontend (Husky s'auto-installe via le script `prepare` de
+   `npm install`), Maven n'a pas d'équivalent — `.git/hooks/` n'est pas
+   versionné par Git, donc `scripts/pre-commit` ne se déclenche jamais tant
+   que cette commande n'a pas été lancée.
+4. `docker compose up` (ou `make up`) — démarre les 5 services : `db`
    (PostgreSQL 14, migrations Flyway + données de référence appliquées
    automatiquement au démarrage du backend), `backend` (Spring Boot),
    `frontend` (Vite, service référencé depuis `../Mentora-managment-fe`),
