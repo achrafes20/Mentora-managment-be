@@ -47,7 +47,9 @@ in `docs/02-diagrams-README.md`, database rationale in
 
 - **Backend:** Spring Boot (Java 17+), Maven wrapper. PostgreSQL 14+ only
   (schema uses Postgres ENUMs and `pg_trgm`; never target H2).
-- **Frontend:** React + Vite + TypeScript.
+- **Frontend:** React + Vite + TypeScript. Node 22+ (see `.nvmrc`/
+  `engines` in `rh-frontend/package.json`; also what `ci.yml` and the
+  `dev`-stage Dockerfile pin).
 - **Workflows:** n8n. **AI:** Gemini behind an interface (see below).
 - **Local dev:** `docker compose up` from `rh-backend/` (backend hot
   reload via DevTools, frontend via Vite HMR, Mailpit catches all
