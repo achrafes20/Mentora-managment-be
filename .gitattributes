@@ -1,0 +1,10 @@
+# Force LF on shell scripts regardless of the checkout platform (Windows
+# checkouts default to CRLF, which breaks scripts run inside Linux
+# containers, e.g. mvnw during the Docker build — "not found", exit 127).
+* text=auto eol=lf
+*.java text eol=lf
+*.sh text eol=lf
+mvnw text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+mvnw.cmd text eol=crlf

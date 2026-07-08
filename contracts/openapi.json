@@ -1,0 +1,55 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Mentora RH — API Backend",
+    "description": "API REST Spring Boot — Gestion RH HB Développement. Contrat exporté dans contracts/openapi.json.",
+    "contact": {
+      "name": "HB Développement",
+      "email": "dev@hbdev.ma"
+    },
+    "version": "0.0.1-SNAPSHOT"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Generated server url"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "name": "BearerAuth",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

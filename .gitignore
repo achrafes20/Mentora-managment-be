@@ -29,3 +29,8 @@ Thumbs.db
 
 # Spring Boot
 HELP.md
+
+# n8n — les credentials ne sont jamais committés (voir n8n/README.md) ;
+# seuls les workflows dans n8n/workflows/ sont versionnés.
+n8n/credentials/
+n8n/**/*credentials*.json

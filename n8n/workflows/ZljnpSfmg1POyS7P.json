@@ -1,0 +1,103 @@
+{
+  "updatedAt": "2026-07-08T14:07:03.000Z",
+  "createdAt": "2026-07-08T14:06:25.948Z",
+  "id": "ZljnpSfmg1POyS7P",
+  "name": "T0.B3 - Webhook vers SMTP (Mailpit)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "webhook-node-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notify-email",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "notify-email-webhook"
+    },
+    {
+      "id": "email-node-1",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        520,
+        300
+      ],
+      "parameters": {
+        "fromEmail": "no-reply@hbdev.ma",
+        "toEmail": "={{ $json.body.to || \"test@hbdev.ma\" }}",
+        "subject": "={{ $json.body.subject || \"Notification Mentora RH\" }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body.message || \"Ceci est un e-mail de test envoye via le workflow n8n webhook vers SMTP (Mailpit).\" }}",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "4z1WsoHRRS8pYCPg",
+          "name": "Mailpit (dev)"
+        }
+      },
+      "webhookId": "8919be71-e6a5-458a-a3cf-4ec95996fd87"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "nodeGroups": [],
+  "pinData": null,
+  "versionId": "9b71384a-9734-47a7-852a-e0c864e1f226",
+  "activeVersionId": "9b71384a-9734-47a7-852a-e0c864e1f226",
+  "versionCounter": 1,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-07-08T14:06:25.953Z",
+      "createdAt": "2026-07-08T14:06:25.953Z",
+      "role": "workflow:owner",
+      "workflowId": "ZljnpSfmg1POyS7P",
+      "projectId": "Hg60kBF7cfoAVkky",
+      "project": {
+        "updatedAt": "2026-07-08T14:04:29.820Z",
+        "createdAt": "2026-07-08T14:02:46.737Z",
+        "id": "Hg60kBF7cfoAVkky",
+        "name": "Admin HBDev <admin@hbdev.ma>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "b1ef2a46-82dd-433c-83cc-248fc108ff01"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

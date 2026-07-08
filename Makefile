@@ -50,13 +50,13 @@ openapi-export:
 ## Nécessite que le service n8n soit démarré (make up-d)
 n8n-export:
 	@echo "==> Export des workflows n8n..."
-	docker compose exec n8n n8n export:workflow --all --output=/n8n/workflows/ 2>/dev/null || \
+	docker compose exec n8n n8n export:workflow --all --separate --pretty --output=/n8n/workflows/ 2>/dev/null || \
 		echo "ERREUR : le service n8n n'est pas démarré. Lancez 'make up-d' d'abord."
 
 ## Importe tous les workflows du dossier n8n/workflows/ dans l'instance locale
 n8n-import:
 	@echo "==> Import des workflows n8n..."
-	docker compose exec n8n n8n import:workflow --input=/n8n/workflows/ 2>/dev/null || \
+	docker compose exec n8n n8n import:workflow --separate --input=/n8n/workflows/ 2>/dev/null || \
 		echo "ERREUR : le service n8n n'est pas démarré. Lancez 'make up-d' d'abord."
 
 ## Installe les git hooks locaux pour la validation automatique pre-commit
