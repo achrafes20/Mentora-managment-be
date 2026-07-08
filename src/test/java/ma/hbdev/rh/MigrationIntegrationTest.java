@@ -18,8 +18,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * Test d'intégration Flyway — vérifie que toutes les migrations s'appliquent sans erreur sur un
  * PostgreSQL 14 réel (NFR-TEST-01).
  *
- * <p>Utilise {@code @ServiceConnection} de Spring Boot Testcontainers pour injecter
- * automatiquement les propriétés de datasource sans configuration manuelle.
+ * <p>Utilise {@code @ServiceConnection} de Spring Boot Testcontainers pour injecter automatiquement
+ * les propriétés de datasource sans configuration manuelle.
  */
 @Testcontainers
 @SpringBootTest
@@ -39,8 +39,7 @@ class MigrationIntegrationTest {
   void allMigrationsApplySuccessfully() {
     var all = flyway.info().all();
     // Toutes les migrations doivent être appliquées avec succès (aucun état FAILED)
-    assertThat(Arrays.stream(all))
-        .noneMatch(m -> m.getState() == MigrationState.FAILED);
+    assertThat(Arrays.stream(all)).noneMatch(m -> m.getState() == MigrationState.FAILED);
   }
 
   @Test

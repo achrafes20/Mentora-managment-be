@@ -12,9 +12,9 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Configuration OpenAPI / Swagger.
  *
- * <p>Définit le schéma de sécurité Bearer JWT afin que Swagger UI permette d'envoyer le token
- * dans les requêtes protégées. Le contrat est exporté via {@code make openapi-export} et écrit
- * dans contracts/openapi.json — source de vérité du contrat API consommé par T0.B1.
+ * <p>Définit le schéma de sécurité Bearer JWT afin que Swagger UI permette d'envoyer le token dans
+ * les requêtes protégées. Le contrat est exporté via {@code make openapi-export} et écrit dans
+ * contracts/openapi.json — source de vérité du contrat API consommé par T0.B1.
  */
 @Configuration
 public class OpenApiConfig {

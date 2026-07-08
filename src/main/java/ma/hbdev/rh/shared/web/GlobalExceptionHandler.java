@@ -2,8 +2,7 @@ package ma.hbdev.rh.shared.web;
 
 import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,10 +17,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * <p>Toutes les erreurs sont transformées en {@link ApiResponse#error(String)} pour garantir un
  * format de réponse uniforme côté frontend. Les stacktraces ne sont jamais exposées (NFR-SEC).
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-  private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   /** Erreurs de validation Bean Validation (annotations @Valid sur les DTO). */
   @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -46,8 +44,7 @@ public class GlobalExceptionHandler {
   /** Accès refusé (403) — rôle insuffisant. */
   @ExceptionHandler(AccessDeniedException.class)
   public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
-    return ResponseEntity.status(HttpStatus.FORBIDDEN)
-        .body(ApiResponse.error("Accès refusé"));
+    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.error("Accès refusé"));
   }
 
   /** Authentification échouée (401). */

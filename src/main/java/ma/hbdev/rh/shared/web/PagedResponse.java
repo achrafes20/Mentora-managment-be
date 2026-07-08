@@ -11,12 +11,7 @@ import org.springframework.data.domain.Page;
  * @param <T> type des éléments de la page
  */
 public record PagedResponse<T>(
-    List<T> content,
-    int page,
-    int size,
-    long totalElements,
-    int totalPages,
-    boolean last) {
+    List<T> content, int page, int size, long totalElements, int totalPages, boolean last) {
 
   /** Construit un {@code PagedResponse} depuis un {@link Page} Spring Data. */
   public static <T> PagedResponse<T> of(Page<T> page) {

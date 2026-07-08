@@ -6,8 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * Point d'entrée de l'application Mentora RH Backend.
  *
- * <p>Architecture : feature-based vertical slices sous ma.hbdev.rh.* — voir
- * docs/ai-instructions.md §Architecture rules.
+ * <p>Architecture : feature-based vertical slices sous ma.hbdev.rh.* — voir docs/ai-instructions.md
+ * §Architecture rules.
  */
 @SpringBootApplication
 public class RhApplication {

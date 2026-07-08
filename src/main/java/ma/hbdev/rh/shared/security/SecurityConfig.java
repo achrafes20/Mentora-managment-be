@@ -32,11 +32,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
   private static final String[] PUBLIC_PATHS = {
-    "/api/health",
-    "/api/auth/**",
-    "/v3/api-docs/**",
-    "/swagger-ui/**",
-    "/swagger-ui.html"
+    "/api/health", "/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
 
   @Value("${app.cors.allowed-origins:http://localhost:5173}")
@@ -44,17 +40,11 @@ public class SecurityConfig {
 
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    return http
-        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+    return http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .csrf(AbstractHttpConfigurer::disable)
-        .sessionManagement(
-            sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
-            auth ->
-                auth.requestMatchers(PUBLIC_PATHS)
-                    .permitAll()
-                    .anyRequest()
-                    .authenticated())
+            auth -> auth.requestMatchers(PUBLIC_PATHS).permitAll().anyRequest().authenticated())
         .build();
   }
 
@@ -63,8 +53,10 @@ public class SecurityConfig {
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
     configuration.setAllowedOrigins(allowedOrigins);
-    configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control"));
+    configuration.setAllowedMethods(
+        Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    configuration.setAllowedHeaders(
+        Arrays.asList("Authorization", "Content-Type", "Cache-Control"));
     configuration.setExposedHeaders(Arrays.asList("Authorization"));
     configuration.setAllowCredentials(true);
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

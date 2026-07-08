@@ -8,8 +8,8 @@ import java.time.Instant;
  *
  * <p>Format systématique : {"success": true/false, "data": ..., "error": ..., "timestamp": ...}
  *
- * <p>Les contrôleurs retournent {@code ApiResponse.ok(data)} ou {@code ApiResponse.error(msg)}.
- * Le {@link GlobalExceptionHandler} produit aussi des {@code ApiResponse.error} pour toutes les
+ * <p>Les contrôleurs retournent {@code ApiResponse.ok(data)} ou {@code ApiResponse.error(msg)}. Le
+ * {@link GlobalExceptionHandler} produit aussi des {@code ApiResponse.error} pour toutes les
  * exceptions non gérées.
  *
  * @param <T> type du payload de données
