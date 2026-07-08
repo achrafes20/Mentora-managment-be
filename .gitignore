@@ -1,0 +1,31 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Compiled class files
+*.class
+
+# Logs
+*.log
+
+# Environment (real secrets — .env.example is the tracked contract)
+.env
+.env.*.local
+
+# IDE
+.idea/
+*.iws
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Spring Boot
+HELP.md
