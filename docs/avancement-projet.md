@@ -57,7 +57,7 @@ la CI de **chaque repo** passe au vert sur une PR de test.*
 
 ### Achraf
 
-- [~] **T0.A1 — Échafaudage du repo `rh-backend` (pivot).**
+- [x] **T0.A1 — Échafaudage du repo `rh-backend` (pivot).**
   Arborescence complète (`src/`, `n8n/`, `docs/`, `scripts/`,
   `contracts/`), migration des 3 documents (`ai-instructions.md`,
   `01-requirements.md`, ce fichier) dans `docs/`, `.gitignore`,
@@ -66,7 +66,7 @@ la CI de **chaque repo** passe au vert sur une PR de test.*
   `n8n-export`, `n8n-import`), README section « Démarrage rapide »
   uniquement (le reste viendra en Phase 6, et mentionne qu'il faut aussi
   cloner `rh-frontend` en repo frère).
-- [ ] **T0.A2 — Squelette backend + migrations + export OpenAPI.**
+- [x] **T0.A2 — Squelette backend + migrations + export OpenAPI.**
   Projet Spring Boot (Java 17+, Maven wrapper), packages feature vides
   (`auth/`…`notification/` + `shared/`), `shared/web` (gestion d'erreurs
   globale, format de réponse, pagination), springdoc-openapi branché avec
@@ -103,7 +103,7 @@ la CI de **chaque repo** passe au vert sur une PR de test.*
   de filtres `paths` puisqu'il n'y a plus qu'un seul type de code par
   repo). Configs lint/format commitées dans chaque repo et référencées
   dans `ai-instructions.md`. Hooks pre-commit (Husky + lint-staged côté
-  `rh-frontend`, hook Maven côté `rh-backend`). Logique dans `scripts/`
+  `rh-frontend`, hook Maven [x] installé côté `rh-backend`). Logique dans `scripts/`
   (dupliquée ou partagée via un snippet commun documenté), YAML mince.
 - [ ] **T0.B3 — n8n + Mailpit + premier workflow SMTP.**
   Services `n8n` et `mailpit` dans le docker-compose de `rh-backend`.

@@ -1,0 +1,20 @@
+# =====================================================================
+#  application-integration-test.yml
+#  Profil pour MigrationIntegrationTest (Testcontainers + PostgreSQL 14)
+#  Les propriétés de datasource sont injectées automatiquement par
+#  @ServiceConnection — ce fichier surcharge uniquement les autres props.
+# =====================================================================
+
+spring:
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+logging:
+  level:
+    root: WARN
+    ma.hbdev.rh: DEBUG
+    org.flywaydb: DEBUG

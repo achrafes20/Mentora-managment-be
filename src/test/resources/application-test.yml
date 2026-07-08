@@ -1,0 +1,23 @@
+# =====================================================================
+#  application-test.yml — Profil pour les smoke tests (RhApplicationTests)
+#  Utilise H2 in-memory (PostgreSQL mode) pour éviter toute dépendance
+#  à Docker. Flyway est désactivé : pas de migration pour ce profil.
+# =====================================================================
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:rh_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false  # Flyway ne tourne pas sur H2 (migrations Postgres-spécifiques)
+
+logging:
+  level:
+    root: WARN
+    ma.hbdev.rh: INFO

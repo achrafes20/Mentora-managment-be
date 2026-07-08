@@ -1,0 +1,38 @@
+#!/bin/sh
+# =====================================================================
+#  Git Pre-Commit Hook — Mentora RH Backend
+#  Vérifie le formatage du code (Spotless) et les lints (Checkstyle)
+#  avant d'autoriser le commit.
+# =====================================================================
+
+echo "========================================================="
+echo " 🔍 [Git Hook] Vérification de la qualité du code..."
+echo "========================================================="
+
+# 1. Vérification Spotless (formatage)
+./mvnw spotless:check -q
+SPOTLESS_STATUS=$?
+
+if [ $SPOTLESS_STATUS -ne 0 ]; then
+    echo ""
+    echo " ❌ [ERREUR] Le formatage du code n'est pas conforme."
+    echo "    Veuillez lancer la commande suivante pour formater le code :"
+    echo "    👉  mvn spotless:apply  (ou: make format)"
+    echo ""
+    exit 1
+fi
+
+# 2. Vérification Checkstyle (règles de code)
+./mvnw checkstyle:check -q
+CHECKSTYLE_STATUS=$?
+
+if [ $CHECKSTYLE_STATUS -ne 0 ]; then
+    echo ""
+    echo " ❌ [ERREUR] Des violations de règles de style ont été trouvées."
+    echo "    Veuillez consulter les rapports dans target/checkstyle-result.xml"
+    echo ""
+    exit 1
+fi
+
+echo " ✅ [Succès] Code validé avec succès. Commit autorisé !"
+exit 0

@@ -1,0 +1,62 @@
+# =====================================================================
+#  docker-compose.yml — Développement local
+#  Lance PostgreSQL 14 + l'application Spring Boot.
+#
+#  Usage :
+#    make up          # démarre tous les services
+#    make down        # arrête et supprime les conteneurs
+#    docker compose logs -f api   # suivi des logs
+#
+#  Variables d'environnement : copier .env.example → .env et remplir.
+# =====================================================================
+
+services:
+
+  # --- Base de données PostgreSQL 14 ---
+  db:
+    image: postgres:14-alpine
+    container_name: rh_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rh_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-rh_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev_only}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - rh_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rh_dev} -d ${POSTGRES_DB:-rh_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Application Spring Boot ---
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rh_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-rh_dev}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-rh_dev}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev_only}
+      SERVER_PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:-changeme_dev_jwt_secret_must_be_at_least_64_chars_long_x}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  rh_pgdata:
+    name: rh_pgdata

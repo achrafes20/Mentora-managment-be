@@ -1,0 +1,16 @@
+# =====================================================================
+#  application-dev.yml — Surcharges pour le profil de développement local
+#  Activé automatiquement par docker-compose (SPRING_PROFILES_ACTIVE=dev)
+# =====================================================================
+
+spring:
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true      # SQL formaté pour la lisibilité en développement
+
+logging:
+  level:
+    ma.hbdev.rh: DEBUG
+    org.springframework.security: DEBUG
+    org.flywaydb: DEBUG
