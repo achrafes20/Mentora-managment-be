@@ -5,10 +5,10 @@
 > every session, together with `docs/avancement-projet.md` (living status:
 > what is done, in progress, and next). This file holds the **stable rules**;
 > never write status updates here.
-> This file lives in `rh-backend/docs/`. Native rule files
-> (`.github/copilot-instructions.md`, `.cursorrules`) exist in **both**
-> repos as one-line pointers to it — if you are asked to update rules,
-> update THIS file only.
+> This file lives in `rh-backend/docs/` and is the single source of truth
+> for the rules — if you are asked to update rules, update THIS file
+> only. No native pointer files (`.github/copilot-instructions.md`,
+> `.cursorrules`) are maintained in either repo; open this file directly.
 
 ## Repository layout — TWO repos, cloned side by side
 

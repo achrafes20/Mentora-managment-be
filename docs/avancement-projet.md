@@ -57,11 +57,10 @@ la CI de **chaque repo** passe au vert sur une PR de test.*
 
 ### Achraf
 
-- [ ] **T0.A1 — Échafaudage du repo `rh-backend` (pivot).**
-  Arborescence complète (`src/`, `n8n/`, `docs/`, `scripts/`, `.github/`,
+- [~] **T0.A1 — Échafaudage du repo `rh-backend` (pivot).**
+  Arborescence complète (`src/`, `n8n/`, `docs/`, `scripts/`,
   `contracts/`), migration des 3 documents (`ai-instructions.md`,
-  `01-requirements.md`, ce fichier) dans `docs/`, pointeur 1-ligne
-  `.github/copilot-instructions.md` + `.cursorrules`, `.gitignore`,
+  `01-requirements.md`, ce fichier) dans `docs/`, `.gitignore`,
   `.env.example` commenté (inclut les variables partagées avec le
   frontend, ex. URL de l'API), `Makefile` squelette (`up`, `test`, `lint`,
   `n8n-export`, `n8n-import`), README section « Démarrage rapide »
@@ -84,10 +83,8 @@ la CI de **chaque repo** passe au vert sur une PR de test.*
 
 ### Taha
 
-- [ ] **T0.B1 — Échafaudage du repo `rh-frontend` + squelette Vite.**
-  Repo séparé : `.gitignore`, pointeur 1-ligne
-  `.github/copilot-instructions.md` + `.cursorrules` (vers
-  `../rh-backend/docs/ai-instructions.md`), README section « Démarrage
+- [~] **T0.B1 — Échafaudage du repo `rh-frontend` + squelette Vite.**
+  Repo séparé : `.gitignore`, README section « Démarrage
   rapide ». Vite + TypeScript + React Router (data router) + TanStack
   Query + Ant Design + react-hook-form/zod. `src/app/` : layout général
   (sidebar avec les entrées des 10 modules, désactivées tant que non
@@ -342,4 +339,6 @@ couverts. Si le temps restant est court : sauter directement à la Phase 6.
 
 | Date | Dev | Tâche | Note (avancée, blocage, décision prise) |
 |---|---|---|---|
-| — | — | — | — |
+| 2026-07-08 | Taha | T0.A1 | Arborescence (`src/`, `n8n/`, `docs/`, `scripts/`, `contracts/`), 5 docs migrés, `.gitignore`, `.env.example` commenté, README « Démarrage rapide » — faits en binôme. Reste pour Achraf : `Makefile` squelette (volontairement pas fait maintenant) + tout T0.A2. |
+| 2026-07-08 | Taha | T0.B1 | Scaffold Vite + TS + React Router (data router) + TanStack Query + Ant Design (locale fr_FR) + react-hook-form/zod. `src/app/` (router, layout sidebar 10 modules désactivés), `src/lib/apiClient.ts` (intercepteurs token + erreurs), script `generate:types`, Dockerfile stage `dev` + `.dockerignore`, `.env.example` frontend (`VITE_API_BASE_URL`). `npm run build` et `npm run dev` vérifiés OK. Reste : intégration réelle avec le service `frontend` du docker-compose (Achraf, T0.A2) et un vrai `contracts/openapi.json` pour que `generate:types` produise quelque chose. |
+| 2026-07-08 | Taha (+ IA) | — | Décision : convention des fichiers pointeurs natifs (`.github/copilot-instructions.md`, `.cursorrules`) supprimée de `ai-instructions.md` et des tâches T0.A1/T0.B1 — plus aucun fichier pointeur à créer dans aucun des deux repos. |
