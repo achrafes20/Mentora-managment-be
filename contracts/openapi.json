@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.1",
+  "openapi": "3.1.0",
   "info": {
     "title": "Mentora RH — API Backend",
     "description": "API REST Spring Boot — Gestion RH HB Développement. Contrat exporté dans contracts/openapi.json.",
