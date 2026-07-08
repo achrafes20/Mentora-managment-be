@@ -55,7 +55,10 @@ in `docs/02-diagrams-README.md`, database rationale in
   reload via DevTools, frontend via Vite HMR, Mailpit catches all
   outgoing mail).
 - **CI/CD:** GitHub Actions **per repo** (`ci.yml`, `release.yml` in each),
-  SAST + Trivy. Images pushed to Docker Hub tagged `sha-<short>`
+  Trivy (dependency/image scanning). No CodeQL/SAST — GitHub Advanced
+  Security requires a paid per-committer license on private repos, not
+  budgeted for this project; revisit at T6.4 (hardening) if that changes.
+  Images pushed to Docker Hub tagged `sha-<short>`
   (immutable; `latest` is human convenience only).
 
 ## API contract discipline (critical in a two-repo setup)
