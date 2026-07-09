@@ -32,13 +32,13 @@ INSERT INTO configuration_parametres (cle, valeur, description) VALUES
 
 -- =====================================================================
 -- Compte Admin initial
--- Mot de passe : Admin@Mentora2025!  (bcrypt — à changer impérativement)
+-- Mot de passe : admin123  (bcrypt — à changer impérativement)
 -- Hash généré avec bcrypt cost=12
 -- =====================================================================
 INSERT INTO utilisateurs (email, mot_de_passe_hash, role, nom, prenom, statut)
 VALUES (
     'admin@hbdev.ma',
-    '$2a$12$X5Y9GqMzQr6rHv1wJOiNZO7k/MuT3sDhD/dXwJwJLPKf0bXrIFbWm',
+    '$2a$12$8PjJolNFxvFQBPZ05wx30uSv.2HhLQM35iZ6tv3TwSfx6TxR28BAO',
     'admin',
     'Admin',
     'HB Développement',

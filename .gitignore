@@ -34,3 +34,4 @@ HELP.md
 # seuls les workflows dans n8n/workflows/ sont versionnés.
 n8n/credentials/
 n8n/**/*credentials*.json
+

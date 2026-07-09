@@ -104,6 +104,27 @@ services:
       - n8n_data:/home/node/.n8n
       - ./n8n/workflows:/n8n/workflows
 
+  # --- pgAdmin : Interface d'administration pour PostgreSQL ---
+  pgadmin:
+    image: dpage/pgadmin4:8.4
+    container_name: rh_pgadmin
+    restart: unless-stopped
+    user: root
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@hbdev.ma}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      POSTGRES_USER: ${POSTGRES_USER:-rh_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev_only}
+    volumes:
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    entrypoint: ["/bin/sh", "-c", "echo db:5432:*:$$POSTGRES_USER:$$POSTGRES_PASSWORD > /pgpass && chmod 600 /pgpass && chown pgadmin /pgpass && /entrypoint.sh"]
+    ports:
+      - "${PGADMIN_PORT:-8082}:80"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   rh_pgdata:
     name: rh_pgdata
