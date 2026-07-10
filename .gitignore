@@ -34,3 +34,6 @@ HELP.md
 # seuls les workflows dans n8n/workflows/ sont versionnés.
 n8n/credentials/
 n8n/**/*credentials*.json
+
+# shared/file — fichiers uploadés en local (bind mount docker-compose), jamais commités
+data/uploads/

@@ -32,7 +32,15 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
   private static final String[] PUBLIC_PATHS = {
-    "/api/health", "/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
+    "/api/health",
+    "/api/auth/**",
+    "/v3/api-docs/**",
+    "/swagger-ui/**",
+    "/swagger-ui.html",
+    // TODO(T1.C1): stopgap tant que T1.A1 (auth JWT) n'est pas mergé — retirer et
+    // remettre /api/departements/** sous authenticated() + RBAC admin réel à la
+    // porte de phase 1 (intégration sécurité, test croisé).
+    "/api/departements/**"
   };
 
   @Value("${app.cors.allowed-origins:http://localhost:5173}")
