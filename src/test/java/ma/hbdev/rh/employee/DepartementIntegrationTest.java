@@ -77,6 +77,11 @@ class DepartementIntegrationTest {
         .perform(get("/api/departements"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[?(@.nom == 'RH & Paie')].statut").value("inactif"));
+
+    mockMvc
+        .perform(post("/api/departements/{id}/activer", id))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.statut").value("actif"));
   }
 
   @Test

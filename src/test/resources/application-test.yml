@@ -12,7 +12,10 @@ spring:
     driver-class-name: org.h2.Driver
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      # none, pas create-drop : le smoke test ne requête aucune table, et Hibernate
+      # tente de générer un "CREATE CAST" pour les enums Postgres natifs
+      # (@JdbcTypeCode NAMED_ENUM) que la syntaxe H2 ne comprend pas.
+      ddl-auto: none
     database-platform: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: false  # Flyway ne tourne pas sur H2 (migrations Postgres-spécifiques)

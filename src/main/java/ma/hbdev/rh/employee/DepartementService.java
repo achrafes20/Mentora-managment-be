@@ -11,11 +11,15 @@ import org.springframework.transaction.annotation.Transactional;
 class DepartementService {
 
   private final DepartementRepository departementRepository;
+  private final EmployeRepository employeRepository;
   private final ApplicationEventPublisher evenements;
 
   DepartementService(
-      DepartementRepository departementRepository, ApplicationEventPublisher evenements) {
+      DepartementRepository departementRepository,
+      EmployeRepository employeRepository,
+      ApplicationEventPublisher evenements) {
     this.departementRepository = departementRepository;
+    this.employeRepository = employeRepository;
     this.evenements = evenements;
   }
 
@@ -42,11 +46,23 @@ class DepartementService {
   }
 
   void desactiver(UUID id) {
-    // NOTE (décision actée avec Taha) : le blocage EF-EMP-10 (aucun employé actif rattaché)
-    // est différé à T1.B2 — le module Employé (entité JPA sur `employes`) n'existe pas encore.
     Departement departement = trouver(id);
+    // EF-EMP-10 : blocage si des employés actifs sont encore rattachés (guard différé de T1.B1,
+    // le module Employé n'existait pas encore à l'époque).
+    List<Employe> employesActifs =
+        employeRepository.findByDepartementIdAndStatut(id, StatutActifInactif.actif);
+    if (!employesActifs.isEmpty()) {
+      throw new DepartementADesEmployesActifsException(employesActifs);
+    }
     departement.desactiver();
     evenements.publishEvent(new DepartementModifieEvent(departement.getId(), "desactivation"));
+  }
+
+  Departement activer(UUID id) {
+    Departement departement = trouver(id);
+    departement.activer();
+    evenements.publishEvent(new DepartementModifieEvent(departement.getId(), "activation"));
+    return departement;
   }
 
   private void verifierNomDisponible(String nomDemande, String nomActuel) {

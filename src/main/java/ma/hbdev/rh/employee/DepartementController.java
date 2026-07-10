@@ -55,6 +55,11 @@ public class DepartementController {
     return ApiResponse.ok();
   }
 
+  @PostMapping("/{id}/activer")
+  public ApiResponse<DepartementReponse> activer(@PathVariable UUID id) {
+    return ApiResponse.ok(DepartementReponse.depuis(departementService.activer(id)));
+  }
+
   @ExceptionHandler(DepartementIntrouvableException.class)
   ResponseEntity<ApiResponse<Void>> gererIntrouvable(DepartementIntrouvableException ex) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
@@ -62,6 +67,11 @@ public class DepartementController {
 
   @ExceptionHandler(DepartementNomDejaUtiliseException.class)
   ResponseEntity<ApiResponse<Void>> gererNomDejaUtilise(DepartementNomDejaUtiliseException ex) {
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(DepartementADesEmployesActifsException.class)
+  ResponseEntity<ApiResponse<Void>> gererEmployesActifs(DepartementADesEmployesActifsException ex) {
     return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
   }
 }

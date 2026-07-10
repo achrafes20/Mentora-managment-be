@@ -2,11 +2,14 @@ package ma.hbdev.rh.shared.file;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -63,6 +66,34 @@ class LocalDiskFileStorage implements FileStorageService {
         sauvegarde.getNomOriginal(),
         sauvegarde.getTypeMime(),
         sauvegarde.getTailleOctets());
+  }
+
+  @Override
+  public FichierUploade recuperer(UUID fichierId) {
+    Fichier fichier =
+        fichierRepository
+            .findById(fichierId)
+            .orElseThrow(
+                () -> new IllegalStateException("Fichier référencé introuvable : " + fichierId));
+    return new FichierUploade(
+        fichier.getId(),
+        fichier.getNomOriginal(),
+        fichier.getTypeMime(),
+        fichier.getTailleOctets());
+  }
+
+  @Override
+  public Resource charger(UUID fichierId) {
+    Fichier fichier =
+        fichierRepository
+            .findById(fichierId)
+            .orElseThrow(
+                () -> new IllegalStateException("Fichier référencé introuvable : " + fichierId));
+    try {
+      return new UrlResource(Path.of(fichier.getCheminStockage()).toUri());
+    } catch (MalformedURLException e) {
+      throw new UncheckedIOException(new IOException(e));
+    }
   }
 
   private void valider(MultipartFile fichier) {
