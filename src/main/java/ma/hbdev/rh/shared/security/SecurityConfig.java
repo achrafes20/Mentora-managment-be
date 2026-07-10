@@ -38,9 +38,10 @@ public class SecurityConfig {
     "/swagger-ui/**",
     "/swagger-ui.html",
     // TODO(T1.C1): stopgap tant que T1.A1 (auth JWT) n'est pas mergé — retirer et
-    // remettre /api/departements/** sous authenticated() + RBAC admin réel à la
-    // porte de phase 1 (intégration sécurité, test croisé).
-    "/api/departements/**"
+    // remettre /api/departements/** et /api/employes/** sous authenticated() + RBAC
+    // admin/manager réel à la porte de phase 1 (intégration sécurité, test croisé).
+    "/api/departements/**",
+    "/api/employes/**"
   };
 
   @Value("${app.cors.allowed-origins:http://localhost:5173}")

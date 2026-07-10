@@ -73,6 +73,10 @@ class Departement {
     this.statut = StatutActifInactif.inactif;
   }
 
+  void activer() {
+    this.statut = StatutActifInactif.actif;
+  }
+
   Instant getCreeLe() {
     return creeLe;
   }

@@ -68,4 +68,21 @@ class LocalDiskFileStorageTest {
     assertThat(resultat.tailleOctets()).isEqualTo(3);
     assertThat(racineStockage.toFile().listFiles()).hasSize(1);
   }
+
+  @Test
+  void chargeLeContenuDunFichierStocke() throws Exception {
+    Path fichierSurDisque = racineStockage.resolve("test.pdf");
+    java.nio.file.Files.writeString(fichierSurDisque, "contenu");
+    UUID fichierId = UUID.randomUUID();
+    Fichier fichier =
+        new Fichier("cv.pdf", fichierSurDisque.toString(), "application/pdf", 7, null);
+    when(fichierRepository.findById(fichierId)).thenReturn(java.util.Optional.of(fichier));
+
+    var ressource = televerseur(10).charger(fichierId);
+
+    assertThat(ressource.exists()).isTrue();
+    try (var flux = ressource.getInputStream()) {
+      assertThat(flux.readAllBytes()).isEqualTo("contenu".getBytes());
+    }
+  }
 }
