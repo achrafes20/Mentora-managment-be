@@ -1,0 +1,67 @@
+package ma.hbdev.rh.employee;
+
+import jakarta.validation.Valid;
+import java.util.List;
+import java.util.UUID;
+import ma.hbdev.rh.shared.web.ApiResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * EF-EMP-10. RBAC réel (Admin) branché à T1.A1 — endpoints ouverts en attendant (voir
+ * SecurityConfig, stopgap retiré à T1.C1).
+ */
+@RestController
+@RequestMapping("/api/departements")
+public class DepartementController {
+
+  private final DepartementService departementService;
+
+  public DepartementController(DepartementService departementService) {
+    this.departementService = departementService;
+  }
+
+  @GetMapping
+  public ApiResponse<List<DepartementReponse>> lister() {
+    return ApiResponse.ok(
+        departementService.lister().stream().map(DepartementReponse::depuis).toList());
+  }
+
+  @PostMapping
+  @ResponseStatus(HttpStatus.CREATED)
+  public ApiResponse<DepartementReponse> creer(@Valid @RequestBody DepartementRequete requete) {
+    return ApiResponse.ok(DepartementReponse.depuis(departementService.creer(requete)));
+  }
+
+  @PutMapping("/{id}")
+  public ApiResponse<DepartementReponse> modifier(
+      @PathVariable UUID id, @Valid @RequestBody DepartementRequete requete) {
+    return ApiResponse.ok(DepartementReponse.depuis(departementService.modifier(id, requete)));
+  }
+
+  @DeleteMapping("/{id}")
+  public ApiResponse<Void> desactiver(@PathVariable UUID id) {
+    departementService.desactiver(id);
+    return ApiResponse.ok();
+  }
+
+  @ExceptionHandler(DepartementIntrouvableException.class)
+  ResponseEntity<ApiResponse<Void>> gererIntrouvable(DepartementIntrouvableException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(DepartementNomDejaUtiliseException.class)
+  ResponseEntity<ApiResponse<Void>> gererNomDejaUtilise(DepartementNomDejaUtiliseException ex) {
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
+  }
+}
