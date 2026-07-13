@@ -38,6 +38,14 @@ spring:
     sql-migration-separator: __
     sql-migration-suffixes: .sql
 
+  # --- Upload multipart ---
+  # Plafond large et fixe ici : c'est LocalDiskFileStorage (app.file-storage.max-size-mb) qui
+  # applique la vraie limite configurable et renvoie le motif de rejet (NFR-SEC-07), pas Spring.
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
   # --- Jackson ---
   jackson:
     default-property-inclusion: non_null
@@ -50,6 +58,9 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  file-storage:
+    path: ${FILE_STORAGE_PATH:./data/uploads}
+    max-size-mb: ${FILE_MAX_SIZE_MB:10}
 
 # --- Serveur ---
 server:

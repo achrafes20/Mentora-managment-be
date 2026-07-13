@@ -35,3 +35,5 @@ HELP.md
 n8n/credentials/
 n8n/**/*credentials*.json
 
+# shared/file — fichiers uploadés en local (bind mount docker-compose), jamais commités
+data/uploads/

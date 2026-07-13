@@ -32,14 +32,18 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
   private static final String[] PUBLIC_PATHS = {
-    "/api/health",
     "/api/auth/health",
     "/api/auth/login",
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
     "/v3/api-docs/**",
     "/swagger-ui/**",
-    "/swagger-ui.html"
+    "/swagger-ui.html",
+    // TODO(T1.C1): stopgap tant que T1.A1 (auth JWT) n'est pas mergé — retirer et
+    // remettre /api/departements/** et /api/employes/** sous authenticated() + RBAC
+    // admin/manager réel à la porte de phase 1 (intégration sécurité, test croisé).
+    "/api/departements/**",
+    "/api/employes/**"
   };
 
   private final JwtAuthenticationFilter jwtAuthenticationFilter;
