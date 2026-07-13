@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Mentora RH — Dev",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "rh_dev",
+      "Username": "rh_dev",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

@@ -3,6 +3,8 @@ package ma.hbdev.rh.shared.web;
 import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import ma.hbdev.rh.auth.AuthException;
+import ma.hbdev.rh.auth.UserNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -52,6 +54,24 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiResponse<Void>> handleAuthentication(AuthenticationException ex) {
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
         .body(ApiResponse.error("Authentification requise"));
+  }
+
+  /** AuthException métier (401) — login échoué, verrouillage, token invalide. */
+  @ExceptionHandler(AuthException.class)
+  public ResponseEntity<ApiResponse<Void>> handleAuthException(AuthException ex) {
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  /** Ressource non trouvée (404). */
+  @ExceptionHandler(UserNotFoundException.class)
+  public ResponseEntity<ApiResponse<Void>> handleNotFound(UserNotFoundException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  /** Requête invalide — e-mail déjà pris, politique de mot de passe, etc. (400). */
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(IllegalArgumentException ex) {
+    return ResponseEntity.badRequest().body(ApiResponse.error(ex.getMessage()));
   }
 
   /** Catch-all — toute exception non gérée → 500 (sans détail interne). */

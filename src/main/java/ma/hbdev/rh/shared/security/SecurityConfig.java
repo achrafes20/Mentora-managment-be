@@ -32,8 +32,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
   private static final String[] PUBLIC_PATHS = {
-    "/api/health",
-    "/api/auth/**",
+    "/api/auth/health",
+    "/api/auth/login",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
     "/v3/api-docs/**",
     "/swagger-ui/**",
     "/swagger-ui.html",
@@ -44,8 +46,15 @@ public class SecurityConfig {
     "/api/employes/**"
   };
 
-  @Value("${app.cors.allowed-origins:http://localhost:5173}")
-  private List<String> allowedOrigins;
+  private final JwtAuthenticationFilter jwtAuthenticationFilter;
+  private final List<String> allowedOrigins;
+
+  public SecurityConfig(
+      JwtAuthenticationFilter jwtAuthenticationFilter,
+      @Value("${app.cors.allowed-origins:http://localhost:5173}") List<String> allowedOrigins) {
+    this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    this.allowedOrigins = allowedOrigins;
+  }
 
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -53,7 +62,17 @@ public class SecurityConfig {
         .csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
-            auth -> auth.requestMatchers(PUBLIC_PATHS).permitAll().anyRequest().authenticated())
+            auth ->
+                auth.requestMatchers(PUBLIC_PATHS)
+                    .permitAll()
+                    .requestMatchers("/api/users/**")
+                    .hasRole("ADMIN")
+                    .anyRequest()
+                    .authenticated())
+        .addFilterBefore(
+            jwtAuthenticationFilter,
+            org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
+                .class)
         .build();
   }
 
