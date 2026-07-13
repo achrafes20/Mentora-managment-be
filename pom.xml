@@ -45,6 +45,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- === Actuator (healthcheck avec vérification DB réelle) === -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- === Validation JSR-380 === -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -80,6 +80,19 @@ springdoc:
     enabled: true
   packages-to-scan: ma.hbdev.rh
 
+# --- Actuator ---
+# Seul /actuator/health est exposé sur HTTP (jamais /env, /beans, etc. — fuite d'info NFR-SEC).
+# show-details: never -> un appelant anonyme voit juste UP/DOWN, jamais l'état du DataSource
+# (adresse, erreur de connexion). SecurityConfig.PUBLIC_PATHS n'ouvre que ce chemin précis.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 # --- Logging ---
 logging:
   file:

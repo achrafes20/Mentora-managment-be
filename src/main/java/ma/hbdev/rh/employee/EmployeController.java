@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.file.FichierInvalideException;
+import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import ma.hbdev.rh.shared.web.PagedResponse;
 import org.springframework.core.io.Resource;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,8 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * EF-EMP (fiche employé). RBAC réel (Admin/Manager selon EF) branché à T1.A1 — endpoints ouverts en
- * attendant (voir SecurityConfig, stopgap retiré à T1.C1).
+ * EF-EMP (fiche employé). RBAC réel (T1.C1) : consultation (liste/détail/documents/historique)
+ * ouverte à Admin et Manager — le Manager est restreint côté service à son propre département
+ * (EF-AUTH-03, cf. {@code EmployeService}) ; création/modification/transfert/désactivation/upload
+ * de document réservés à l'Admin (EF-AUTH-03 : "aucun droit de modification" pour le Manager).
  */
 @RestController
 @RequestMapping("/api/employes")
@@ -41,6 +45,7 @@ public class EmployeController {
   }
 
   @GetMapping
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<PagedResponse<EmployeReponse>> lister(
       @RequestParam(required = false) UUID departementId,
       @RequestParam(required = false) UUID managerId,
@@ -56,29 +61,36 @@ public class EmployeController {
   }
 
   @GetMapping("/{id}")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<EmployeReponse> detail(@PathVariable UUID id) {
     return ApiResponse.ok(EmployeReponse.depuis(employeService.trouver(id)));
   }
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<EmployeReponse> creer(@Valid @RequestBody EmployeRequete requete) {
     return ApiResponse.ok(EmployeReponse.depuis(employeService.creer(requete)));
   }
 
   @PutMapping("/{id}")
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<EmployeReponse> modifier(
       @PathVariable UUID id, @Valid @RequestBody EmployeModificationRequete requete) {
     return ApiResponse.ok(EmployeReponse.depuis(employeService.modifier(id, requete)));
   }
 
   @PostMapping("/{id}/transferer")
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<EmployeReponse> transferer(
       @PathVariable UUID id, @Valid @RequestBody TransfertRequete requete) {
-    return ApiResponse.ok(EmployeReponse.depuis(employeService.transferer(id, requete, null)));
+    return ApiResponse.ok(
+        EmployeReponse.depuis(
+            employeService.transferer(id, requete, CurrentUser.id().orElse(null))));
   }
 
   @GetMapping("/{id}/transferts")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<List<EmployeTransfertReponse>> historiqueTransferts(@PathVariable UUID id) {
     return ApiResponse.ok(
         employeService.historiqueTransferts(id).stream()
@@ -87,6 +99,7 @@ public class EmployeController {
   }
 
   @PostMapping("/{id}/desactiver")
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<Void> desactiver(
       @PathVariable UUID id, @Valid @RequestBody DesactivationRequete requete) {
     employeService.desactiver(id, requete);
@@ -95,14 +108,17 @@ public class EmployeController {
 
   @PostMapping("/{id}/documents")
   @ResponseStatus(HttpStatus.CREATED)
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<EmployeDocumentReponse> attacherDocument(
       @PathVariable UUID id,
       @RequestPart MultipartFile fichier,
       @RequestPart(required = false) String typeDocument) {
-    return ApiResponse.ok(employeService.attacherDocument(id, fichier, typeDocument, null));
+    UUID televersePar = CurrentUser.id().orElse(null);
+    return ApiResponse.ok(employeService.attacherDocument(id, fichier, typeDocument, televersePar));
   }
 
   @GetMapping("/{id}/documents")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<List<EmployeDocumentReponse>> listerDocuments(@PathVariable UUID id) {
     return ApiResponse.ok(employeService.listerDocuments(id));
   }
@@ -110,6 +126,7 @@ public class EmployeController {
   // "inline" (pas "attachment") : laisse le navigateur prévisualiser PDF/image quand il le peut,
   // tout en restant téléchargeable via son propre bouton de sauvegarde.
   @GetMapping("/{id}/documents/{documentId}/telecharger")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ResponseEntity<Resource> telechargerDocument(
       @PathVariable UUID id, @PathVariable UUID documentId) {
     EmployeDocumentTelecharge telecharge = employeService.telechargerDocument(id, documentId);

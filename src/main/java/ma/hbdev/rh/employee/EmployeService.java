@@ -4,9 +4,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.file.FileStorageService;
+import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -45,17 +47,46 @@ class EmployeService {
       StatutActifInactif statut,
       String recherche,
       Pageable pageable) {
+    UUID departementIdEffectif = departementId;
+    if (CurrentUser.hasRole("MANAGER")) {
+      UUID departementGere = departementGereParManagerCourant();
+      if (departementGere == null
+          || (departementId != null && !departementId.equals(departementGere))) {
+        return Page.empty(pageable);
+      }
+      departementIdEffectif = departementGere;
+    }
     var specification =
         EmployeSpecifications.filtrer(
-            departementId, managerId, typeContrat, statut, blancVersNull(recherche));
+            departementIdEffectif, managerId, typeContrat, statut, blancVersNull(recherche));
     return employeRepository.findAll(specification, pageable);
   }
 
   @Transactional(readOnly = true)
   Employe trouver(UUID id) {
-    return employeRepository
-        .findByIdAvecDepartement(id)
-        .orElseThrow(() -> new EmployeIntrouvableException(id));
+    Employe employe =
+        employeRepository
+            .findByIdAvecDepartement(id)
+            .orElseThrow(() -> new EmployeIntrouvableException(id));
+    verifierPerimetreManager(employe);
+    return employe;
+  }
+
+  // EF-AUTH-03 : le Manager n'a accès en lecture qu'aux employés de son propre département.
+  private void verifierPerimetreManager(Employe employe) {
+    if (!CurrentUser.hasRole("MANAGER")) {
+      return;
+    }
+    UUID departementGere = departementGereParManagerCourant();
+    if (departementGere == null || !departementGere.equals(employe.getDepartement().getId())) {
+      throw new AccessDeniedException("Employé hors du périmètre du Manager");
+    }
+  }
+
+  private UUID departementGereParManagerCourant() {
+    UUID managerId =
+        CurrentUser.id().orElseThrow(() -> new AccessDeniedException("Non authentifié"));
+    return departementRepository.findByManagerId(managerId).map(Departement::getId).orElse(null);
   }
 
   Employe creer(EmployeRequete requete) {
@@ -96,8 +127,6 @@ class EmployeService {
     return employe;
   }
 
-  // NOTE : effectuePar/televersePar restent null tant que T1.A1 (auth) n'est pas mergé — pas de
-  // principal authentifié disponible. À brancher sur le SecurityContext une fois T1.C1 fait.
   Employe transferer(UUID id, TransfertRequete requete, UUID effectuePar) {
     Employe employe = trouver(id);
     Departement nouveauDepartement = trouverDepartement(requete.nouveauDepartementId());
@@ -154,6 +183,7 @@ class EmployeService {
 
   @Transactional(readOnly = true)
   EmployeDocumentTelecharge telechargerDocument(UUID employeId, UUID documentId) {
+    trouver(employeId); // valide l'existence + le périmètre Manager (EF-AUTH-03)
     EmployeDocument document =
         documentRepository
             .findById(documentId)

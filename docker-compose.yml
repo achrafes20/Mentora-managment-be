@@ -57,7 +57,7 @@ services:
     volumes:
       - ./data/uploads:/data/uploads
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 60s
@@ -68,6 +68,7 @@ services:
     build:
       context: ../Mentora-managment-fe
       dockerfile: Dockerfile
+      target: dev
     container_name: rh_frontend
     restart: unless-stopped
     environment:

@@ -40,13 +40,6 @@ public class AuthController {
   private final JwtService jwtService;
   private final UserRepository userRepository;
 
-  /** Health-check minimal (non sécurisé). */
-  @GetMapping("/health")
-  @Operation(summary = "Health check")
-  public ResponseEntity<ApiResponse<String>> health() {
-    return ResponseEntity.ok(ApiResponse.ok("OK"));
-  }
-
   /** EF-AUTH-01 : Login email + mot de passe → JWT + profil. */
   @PostMapping("/login")
   @Operation(summary = "Connexion utilisateur")
