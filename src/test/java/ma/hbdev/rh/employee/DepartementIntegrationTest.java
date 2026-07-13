@@ -8,14 +8,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import ma.hbdev.rh.auth.LoginRequest;
+import ma.hbdev.rh.auth.RoleUtilisateur;
+import ma.hbdev.rh.auth.SessionRepository;
+import ma.hbdev.rh.auth.User;
+import ma.hbdev.rh.auth.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -36,6 +44,51 @@ class DepartementIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
+  @Autowired private UserRepository userRepository;
+  @Autowired private SessionRepository sessionRepository;
+  @Autowired private PasswordEncoder passwordEncoder;
+
+  private String adminToken;
+  private String managerToken;
+
+  @BeforeEach
+  void authentifierAdminEtManager() throws Exception {
+    sessionRepository.deleteAll();
+    userRepository.deleteAll();
+
+    User admin = new User();
+    admin.setEmail("admin@hbdev.ma");
+    admin.setMotDePasseHash(passwordEncoder.encode("AdminPass@2025"));
+    admin.setRole(RoleUtilisateur.admin);
+    admin.setNom("System");
+    admin.setPrenom("Admin");
+    userRepository.save(admin);
+
+    User manager = new User();
+    manager.setEmail("manager@hbdev.ma");
+    manager.setMotDePasseHash(passwordEncoder.encode("ManagerPass@2025"));
+    manager.setRole(RoleUtilisateur.manager);
+    manager.setNom("Dupont");
+    manager.setPrenom("Jean");
+    userRepository.save(manager);
+
+    adminToken = login("admin@hbdev.ma", "AdminPass@2025");
+    managerToken = login("manager@hbdev.ma", "ManagerPass@2025");
+  }
+
+  private String login(String email, String motDePasse) throws Exception {
+    String requete = objectMapper.writeValueAsString(new LoginRequest(email, motDePasse));
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content(requete))
+            .andExpect(status().isOk())
+            .andReturn();
+    return objectMapper
+        .readTree(result.getResponse().getContentAsString())
+        .at("/data/token")
+        .asText();
+  }
 
   @Test
   void creeListeModifieEtDesactiveUnDepartement() throws Exception {
@@ -46,6 +99,7 @@ class DepartementIntegrationTest {
         mockMvc
             .perform(
                 post("/api/departements")
+                    .header("Authorization", "Bearer " + adminToken)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(requeteCreation))
             .andExpect(status().isCreated())
@@ -57,7 +111,7 @@ class DepartementIntegrationTest {
     String id = objectMapper.readTree(reponseCreation).at("/data/id").asText();
 
     mockMvc
-        .perform(get("/api/departements"))
+        .perform(get("/api/departements").header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[?(@.nom == 'Ressources Humaines')]").exists());
 
@@ -66,20 +120,26 @@ class DepartementIntegrationTest {
     mockMvc
         .perform(
             put("/api/departements/{id}", id)
+                .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requeteModification))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.nom").value("RH & Paie"));
 
-    mockMvc.perform(delete("/api/departements/{id}", id)).andExpect(status().isOk());
+    mockMvc
+        .perform(
+            delete("/api/departements/{id}", id).header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk());
 
     mockMvc
-        .perform(get("/api/departements"))
+        .perform(get("/api/departements").header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[?(@.nom == 'RH & Paie')].statut").value("inactif"));
 
     mockMvc
-        .perform(post("/api/departements/{id}/activer", id))
+        .perform(
+            post("/api/departements/{id}/activer", id)
+                .header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.statut").value("actif"));
   }
@@ -89,11 +149,19 @@ class DepartementIntegrationTest {
     String requete = objectMapper.writeValueAsString(new DepartementRequete("Finance", null));
 
     mockMvc
-        .perform(post("/api/departements").contentType(MediaType.APPLICATION_JSON).content(requete))
+        .perform(
+            post("/api/departements")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requete))
         .andExpect(status().isCreated());
 
     mockMvc
-        .perform(post("/api/departements").contentType(MediaType.APPLICATION_JSON).content(requete))
+        .perform(
+            post("/api/departements")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requete))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.success").value(false));
   }
@@ -105,8 +173,34 @@ class DepartementIntegrationTest {
     mockMvc
         .perform(
             put("/api/departements/{id}", "00000000-0000-0000-0000-000000000000")
+                .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requete))
         .andExpect(status().isNotFound());
+  }
+
+  // Pas de AuthenticationEntryPoint personnalisé dans SecurityConfig -> Spring Security retombe
+  // sur Http403ForbiddenEntryPoint pour un principal anonyme, donc 403 et non 401 ici (le 401 du
+  // GlobalExceptionHandler ne couvre que le cas "jeton présent mais invalide/expiré", géré
+  // explicitement par JwtAuthenticationFilter).
+  @Test
+  void requeteAnonymeEstRefusee() throws Exception {
+    mockMvc.perform(get("/api/departements")).andExpect(status().isForbidden());
+  }
+
+  @Test
+  void managerPeutListerMaisPasCreerUnDepartement() throws Exception {
+    mockMvc
+        .perform(get("/api/departements").header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isOk());
+
+    String requete = objectMapper.writeValueAsString(new DepartementRequete("Nouveau", null));
+    mockMvc
+        .perform(
+            post("/api/departements")
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requete))
+        .andExpect(status().isForbidden());
   }
 }

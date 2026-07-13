@@ -58,8 +58,11 @@ in `docs/02-diagrams-README.md`, database rationale in
   Trivy (dependency/image scanning). No CodeQL/SAST — GitHub Advanced
   Security requires a paid per-committer license on private repos, not
   budgeted for this project; revisit at T6.4 (hardening) if that changes.
-  Images pushed to Docker Hub tagged `sha-<short>`
-  (immutable; `latest` is human convenience only).
+  `release.yml` currently builds the image and runs `trivy image` locally
+  only (no push). Target registry is **GHCR**, tagged `sha-<short>`
+  (immutable; `latest` is human convenience only) — push step
+  (`docker/login-action` + push) not yet implemented, tracked as
+  follow-up work on T1.A2.
 
 ## API contract discipline (critical in a two-repo setup)
 

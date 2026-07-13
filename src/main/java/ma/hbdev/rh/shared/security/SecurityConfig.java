@@ -18,11 +18,12 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
- * Configuration Spring Security — Phase 0 (scaffold).
+ * Configuration Spring Security.
  *
- * <p>En Phase 0 le filtre JWT n'est pas encore implémenté. La configuration ouvre uniquement les
- * endpoints publics nécessaires au healthcheck et à Swagger. Les endpoints /api/** exigent
- * l'authentification (401 si absent). Le filtre JWT sera branché en T1.A1.
+ * <p>Seuls les endpoints publics (healthcheck, login, reset mot de passe, Swagger) sont ouverts.
+ * Tout le reste exige l'authentification (401 si absent) ; le RBAC fin par rôle est appliqué soit
+ * ici par {@code requestMatchers}, soit par {@code @PreAuthorize} sur les contrôleurs (ex. {@code
+ * UserController}, {@code DepartementController}, {@code EmployeController} — cf. T1.C1).
  *
  * <p>NFR-SEC-01 : stateless (pas de session HTTP), CSRF désactivé pour API REST pure.
  */
@@ -38,12 +39,7 @@ public class SecurityConfig {
     "/api/auth/reset-password",
     "/v3/api-docs/**",
     "/swagger-ui/**",
-    "/swagger-ui.html",
-    // TODO(T1.C1): stopgap tant que T1.A1 (auth JWT) n'est pas mergé — retirer et
-    // remettre /api/departements/** et /api/employes/** sous authenticated() + RBAC
-    // admin/manager réel à la porte de phase 1 (intégration sécurité, test croisé).
-    "/api/departements/**",
-    "/api/employes/**"
+    "/swagger-ui.html"
   };
 
   private final JwtAuthenticationFilter jwtAuthenticationFilter;

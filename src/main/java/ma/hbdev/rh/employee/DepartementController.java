@@ -6,6 +6,7 @@ import java.util.UUID;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,8 +19,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * EF-EMP-10. RBAC réel (Admin) branché à T1.A1 — endpoints ouverts en attendant (voir
- * SecurityConfig, stopgap retiré à T1.C1).
+ * EF-EMP-10. Consultation ouverte à Admin/Manager (référence bénigne, nécessaire au Manager pour
+ * résoudre les noms de département affichés côté fiche employé) ; création/modification/
+ * (dés)activation réservées à l'Admin (T1.C1).
  */
 @RestController
 @RequestMapping("/api/departements")
@@ -32,6 +34,7 @@ public class DepartementController {
   }
 
   @GetMapping
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<List<DepartementReponse>> lister() {
     return ApiResponse.ok(
         departementService.lister().stream().map(DepartementReponse::depuis).toList());
@@ -39,23 +42,27 @@ public class DepartementController {
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<DepartementReponse> creer(@Valid @RequestBody DepartementRequete requete) {
     return ApiResponse.ok(DepartementReponse.depuis(departementService.creer(requete)));
   }
 
   @PutMapping("/{id}")
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<DepartementReponse> modifier(
       @PathVariable UUID id, @Valid @RequestBody DepartementRequete requete) {
     return ApiResponse.ok(DepartementReponse.depuis(departementService.modifier(id, requete)));
   }
 
   @DeleteMapping("/{id}")
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<Void> desactiver(@PathVariable UUID id) {
     departementService.desactiver(id);
     return ApiResponse.ok();
   }
 
   @PostMapping("/{id}/activer")
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<DepartementReponse> activer(@PathVariable UUID id) {
     return ApiResponse.ok(DepartementReponse.depuis(departementService.activer(id)));
   }
