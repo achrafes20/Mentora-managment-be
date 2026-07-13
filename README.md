@@ -34,7 +34,7 @@ workspace/
 
 | Service    | URL locale                        | Notes |
 |------------|------------------------------------|-------|
-| `backend`  | http://localhost:8080              | `/api/health`, `/swagger-ui.html`, `/v3/api-docs` |
+| `backend`  | http://localhost:8080              | `/actuator/health`, `/swagger-ui.html`, `/v3/api-docs` |
 | `frontend` | http://localhost:5173              | Vite dev server, HMR actif |
 | `db`       | localhost:5432                     | `rh_dev` / `rh_dev` par défaut |
 | `mailpit`  | http://localhost:8025              | UI web — tous les e-mails envoyés via n8n atterrissent ici |

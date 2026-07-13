@@ -3,6 +3,7 @@ package ma.hbdev.rh.shared.security;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -33,7 +34,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
   private static final String[] PUBLIC_PATHS = {
-    "/api/auth/health",
     "/api/auth/login",
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
@@ -59,7 +59,12 @@ public class SecurityConfig {
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
             auth ->
-                auth.requestMatchers(PUBLIC_PATHS)
+                // EndpointRequest (pas un simple requestMatchers(String)) : les endpoints
+                // Actuator ne passent pas par le HandlerMapping Spring MVC standard, un
+                // matcher par chemin littéral ne les reconnaît pas de façon fiable.
+                auth.requestMatchers(EndpointRequest.to("health"))
+                    .permitAll()
+                    .requestMatchers(PUBLIC_PATHS)
                     .permitAll()
                     .requestMatchers("/api/users/**")
                     .hasRole("ADMIN")
