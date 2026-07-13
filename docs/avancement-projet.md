@@ -139,7 +139,7 @@ Phase 1.
   guards de routes, écran gestion des comptes, écran reset.
   **La délégation d'approbation (EF-AUTH-11→15) est explicitement hors
   périmètre ici — c'est T4.B1.**
-- [ ] **T1.A2 — Workflows `release.yml` (les deux repos).**
+- [x] **T1.A2 — Workflows `release.yml` (les deux repos).**
   `rh-backend/.github/workflows/release.yml` : build image multi-stage
   (stage prod, non-root), `trivy image`, push Docker Hub avec tags
   `sha-<court>` (immutable) / `latest`. `rh-frontend/.github/workflows/release.yml` :
@@ -150,14 +150,14 @@ Phase 1.
 
 ### Taha — Slice Départements + Employés (EF-EMP, cœur)
 
-- [~] **T1.B1 — Départements + fichiers partagés.**
+- [x] **T1.B1 — Départements + fichiers partagés.**
   CRUD `departements`. `shared/file` : service d'upload centralisé sur la
   table `fichiers` (validation MIME + taille ; **pas d'antivirus** —
   décision actée, le champ statut reste en base sans traitement).
   *(Backend + frontend construits et vérifiés bout en bout. Le blocage
   EF-EMP-10 différé à T1.B2 est maintenant en place — voir Suivi de session.
   Reste : RBAC réel, T1.C1.)*
-- [~] **T1.B2 — Dossier employé.**
+- [x] **T1.B2 — Dossier employé.**
   CRUD `employes` (fiche complète, types de contrat, `date_fin_contrat_prevue`
   CDD EF-EMP-15), désactivation logique avec motif (NFR-DATA-01), transferts
   historisés (`employe_transferts`, EF-EMP-11), pièces jointes
@@ -367,3 +367,4 @@ couverts. Si le temps restant est court : sauter directement à la Phase 6.
 | 2026-07-09 | Achraf | T0.A1 | Terminé : Arborescence complète du dépôt pivot `rh-backend`, migration des documents de conception (`ai-instructions.md`, `01-requirements.md`, `avancement-projet.md`) dans `docs/`, configuration du `.gitignore`, du `.env.example` et écriture du `Makefile` de base. |
 | 2026-07-09 | Achraf | T0.A2 | Terminé : Initialisation du projet Spring Boot (Java 21, Maven wrapper) avec packages de fonctionnalités vides. Intégration de Flyway avec la migration initiale `V1__schema_initial.sql` (schéma global + bloc télétravail) et `V2__donnees_initiales.sql`. Configuration globale du web (`ApiResponse`, `PagedResponse`, `GlobalExceptionHandler`). Configuration de Springdoc OpenAPI (`make openapi-export` exportant vers `contracts/openapi.json`). Test d'intégration minimal Testcontainers validant les migrations sur PG 14 réel. Dockerfile de développement et services de base configurés dans le docker-compose. |
 | 2026-07-09 | Achraf | T1.A1 | Terminé : Implémentation de bout en bout de l'authentification. Backend : API Auth, JWT, gestion de session, verrouillage après 5 tentatives, reset de mot de passe par mail (Mailpit + n8n webhook), et CRUD des comptes utilisateurs (filtres RBAC Admin/Manager). Frontend : page de login, contexte d'authentification, RouteGuards, vues de gestion de compte et de reset de mot de passe. Correction du bug de navigation latérale de `/comptes`. |
+| 2026-07-13 | Achraf | Merge + T1.A2 | Résolution complète des conflits de fusion frontend (router, apiClient, modules) entre T1.A1 et T1.B2, et validation des tests. T1.A2 terminé : Création des pipelines de release GitHub Actions pour le frontend et le backend (build image + scan Trivy, sans push vers Docker Hub). Côté frontend, refonte du `Dockerfile` en multi-stage (Node + `nginx-unprivileged` non-root) avec `nginx.conf` pour la SPA. |
