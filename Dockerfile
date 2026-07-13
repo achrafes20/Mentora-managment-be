@@ -24,8 +24,9 @@ RUN ./mvnw package -DskipTests -q
 # --- Stage 2 : Runtime ---
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
-# Utilisateur non-root (NFR-SEC)
-RUN addgroup -S rh && adduser -S rh -G rh
+# Mise à jour des paquets OS pour corriger les vulnérabilités Trivy, puis création de l'utilisateur non-root (NFR-SEC)
+RUN apk upgrade --no-cache && \
+    addgroup -S rh && adduser -S rh -G rh
 USER rh
 
 WORKDIR /app
