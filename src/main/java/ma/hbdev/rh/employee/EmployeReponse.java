@@ -20,6 +20,7 @@ public record EmployeReponse(
     LocalDate dateDepart,
     String motifDepart,
     String statut,
+    UUID photoFichierId,
     Instant creeLe,
     Instant modifieLe) {
 
@@ -40,6 +41,7 @@ public record EmployeReponse(
         employe.getDateDepart(),
         employe.getMotifDepart() == null ? null : employe.getMotifDepart().name(),
         employe.getStatut().name(),
+        employe.getPhotoFichierId(),
         employe.getCreeLe(),
         employe.getModifieLe());
   }

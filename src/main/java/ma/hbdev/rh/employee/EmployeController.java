@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -138,6 +139,54 @@ public class EmployeController {
         .body(telecharge.ressource());
   }
 
+  @PostMapping("/{id}/photo")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<EmployeReponse> televerserPhoto(
+      @PathVariable UUID id, @RequestPart MultipartFile photo) {
+    UUID televersePar = CurrentUser.id().orElse(null);
+    return ApiResponse.ok(
+        EmployeReponse.depuis(employeService.televerserPhoto(id, photo, televersePar)));
+  }
+
+  @GetMapping("/{id}/photo")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  public ResponseEntity<Resource> recupererPhoto(@PathVariable UUID id) {
+    EmployePhotoTelecharge photo = employeService.recupererPhoto(id);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(photo.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.inline().filename("photo.jpg").build().toString())
+        .body(photo.ressource());
+  }
+
+  @DeleteMapping("/{id}/documents/{documentId}")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<Void> supprimerDocument(
+      @PathVariable UUID id, @PathVariable UUID documentId) {
+    employeService.supprimerDocument(id, documentId);
+    return ApiResponse.ok();
+  }
+
+  @PutMapping("/{id}/documents/{documentId}")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<EmployeDocumentReponse> remplacerDocument(
+      @PathVariable UUID id,
+      @PathVariable UUID documentId,
+      @RequestPart MultipartFile fichier) {
+    UUID televersePar = CurrentUser.id().orElse(null);
+    return ApiResponse.ok(
+        employeService.remplacerDocument(id, documentId, fichier, televersePar));
+  }
+
+  @PostMapping("/{id}/carte/envoyer-email")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<Void> envoyerCarteParEmail(
+      @PathVariable UUID id, @Valid @RequestBody CarteEmailRequete requete) {
+    employeService.envoyerCarteParEmail(id, requete);
+    return ApiResponse.ok();
+  }
+
   @ExceptionHandler(EmployeIntrouvableException.class)
   ResponseEntity<ApiResponse<Void>> gererIntrouvable(EmployeIntrouvableException ex) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
@@ -169,5 +218,15 @@ public class EmployeController {
   ResponseEntity<ApiResponse<Void>> gererDocumentIntrouvable(
       EmployeDocumentIntrouvableException ex) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(PhotoEmployeIntrouvableException.class)
+  ResponseEntity<ApiResponse<Void>> gererPhotoIntrouvable(PhotoEmployeIntrouvableException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(EmployeSansEmailException.class)
+  ResponseEntity<ApiResponse<Void>> gererSansEmail(EmployeSansEmailException ex) {
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(ex.getMessage()));
   }
 }

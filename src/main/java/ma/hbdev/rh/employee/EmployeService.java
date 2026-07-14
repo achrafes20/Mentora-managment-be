@@ -2,8 +2,11 @@ package ma.hbdev.rh.employee;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import ma.hbdev.rh.shared.file.FileStorageService;
+import ma.hbdev.rh.shared.file.FichierInvalideException;
+import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -17,11 +20,14 @@ import org.springframework.web.multipart.MultipartFile;
 @Transactional
 class EmployeService {
 
+  private static final Set<String> TYPES_MIME_PHOTO = Set.of("image/jpeg", "image/png");
+
   private final EmployeRepository employeRepository;
   private final DepartementRepository departementRepository;
   private final EmployeTransfertRepository transfertRepository;
   private final EmployeDocumentRepository documentRepository;
   private final FileStorageService fileStorageService;
+  private final MailService mailService;
   private final ApplicationEventPublisher evenements;
 
   EmployeService(
@@ -30,12 +36,14 @@ class EmployeService {
       EmployeTransfertRepository transfertRepository,
       EmployeDocumentRepository documentRepository,
       FileStorageService fileStorageService,
+      MailService mailService,
       ApplicationEventPublisher evenements) {
     this.employeRepository = employeRepository;
     this.departementRepository = departementRepository;
     this.transfertRepository = transfertRepository;
     this.documentRepository = documentRepository;
     this.fileStorageService = fileStorageService;
+    this.mailService = mailService;
     this.evenements = evenements;
   }
 
@@ -193,6 +201,73 @@ class EmployeService {
     var ressource = fileStorageService.charger(document.getFichierId());
     return new EmployeDocumentTelecharge(
         ressource, metadonnees.nomOriginal(), metadonnees.typeMime());
+  }
+
+  Employe televerserPhoto(UUID employeId, MultipartFile fichier, UUID televersePar) {
+    Employe employe = trouver(employeId);
+    validerPhoto(fichier);
+    var uploade = fileStorageService.televerser(fichier, televersePar);
+    employe.definirPhoto(uploade.id());
+    evenements.publishEvent(new EmployeModifieEvent(employeId, "photo_mise_a_jour"));
+    return employe;
+  }
+
+  @Transactional(readOnly = true)
+  EmployePhotoTelecharge recupererPhoto(UUID employeId) {
+    Employe employe = trouver(employeId);
+    if (employe.getPhotoFichierId() == null) {
+      throw new PhotoEmployeIntrouvableException();
+    }
+    var metadonnees = fileStorageService.recuperer(employe.getPhotoFichierId());
+    var ressource = fileStorageService.charger(employe.getPhotoFichierId());
+    return new EmployePhotoTelecharge(ressource, metadonnees.typeMime());
+  }
+
+  void supprimerDocument(UUID employeId, UUID documentId) {
+    trouver(employeId);
+    EmployeDocument document =
+        documentRepository
+            .findById(documentId)
+            .filter(d -> d.getEmployeId().equals(employeId))
+            .orElseThrow(() -> new EmployeDocumentIntrouvableException(documentId));
+    documentRepository.delete(document);
+    evenements.publishEvent(new EmployeModifieEvent(employeId, "document_supprime"));
+  }
+
+  EmployeDocumentReponse remplacerDocument(
+      UUID employeId, UUID documentId, MultipartFile fichier, UUID televersePar) {
+    trouver(employeId);
+    EmployeDocument ancien =
+        documentRepository
+            .findById(documentId)
+            .filter(d -> d.getEmployeId().equals(employeId))
+            .orElseThrow(() -> new EmployeDocumentIntrouvableException(documentId));
+    String typeDocument = ancien.getTypeDocument();
+    documentRepository.delete(ancien);
+    return attacherDocument(employeId, fichier, typeDocument, televersePar);
+  }
+
+  void envoyerCarteParEmail(UUID employeId, CarteEmailRequete requete) {
+    Employe employe = trouver(employeId);
+    String destinataire =
+        requete.destinataire() != null && !requete.destinataire().isBlank()
+            ? requete.destinataire()
+            : employe.getEmail();
+    if (destinataire == null || destinataire.isBlank()) {
+      throw new EmployeSansEmailException();
+    }
+    mailService.sendEmail(destinataire, requete.objet(), requete.corps());
+    evenements.publishEvent(new EmployeModifieEvent(employeId, "carte_email_envoyee"));
+  }
+
+  private void validerPhoto(MultipartFile fichier) {
+    if (fichier == null || fichier.isEmpty()) {
+      throw new FichierInvalideException("Photo vide ou absente");
+    }
+    if (!TYPES_MIME_PHOTO.contains(fichier.getContentType())) {
+      throw new FichierInvalideException(
+          "La photo doit être au format JPEG ou PNG : " + fichier.getContentType());
+    }
   }
 
   private Departement trouverDepartement(UUID id) {
