@@ -68,6 +68,9 @@ class Employe {
   @Column(nullable = false)
   private StatutActifInactif statut = StatutActifInactif.actif;
 
+  @Column(name = "photo_fichier_id")
+  private UUID photoFichierId;
+
   @Column(name = "cree_le", insertable = false, updatable = false)
   private Instant creeLe;
 
@@ -129,6 +132,10 @@ class Employe {
     this.dateDepart = dateDepart;
   }
 
+  void definirPhoto(UUID fichierId) {
+    this.photoFichierId = fichierId;
+  }
+
   UUID getId() {
     return id;
   }
@@ -183,6 +190,10 @@ class Employe {
 
   StatutActifInactif getStatut() {
     return statut;
+  }
+
+  UUID getPhotoFichierId() {
+    return photoFichierId;
   }
 
   Instant getCreeLe() {

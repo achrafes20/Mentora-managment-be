@@ -9,6 +9,7 @@ target/
 
 # Logs
 *.log
+logs/
 
 # Environment (real secrets — .env.example is the tracked contract)
 .env
