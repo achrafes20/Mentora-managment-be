@@ -31,6 +31,8 @@ interface PointageRepository extends JpaRepository<Pointage, UUID> {
   @Query("SELECT p FROM Pointage p WHERE p.employeId = :employeId" + " ORDER BY p.horodatage DESC")
   Page<Pointage> findByEmployeId(@Param("employeId") UUID employeId, Pageable pageable);
 
-  @Query("SELECT DISTINCT p.employeId FROM Pointage p WHERE p.horodatage >= :debut AND p.horodatage < :fin")
-  List<UUID> findEmployeIdsAvecPointageEntre(@Param("debut") Instant debut, @Param("fin") Instant fin);
+  @Query(
+      "SELECT DISTINCT p.employeId FROM Pointage p WHERE p.horodatage >= :debut AND p.horodatage < :fin")
+  List<UUID> findEmployeIdsAvecPointageEntre(
+      @Param("debut") Instant debut, @Param("fin") Instant fin);
 }

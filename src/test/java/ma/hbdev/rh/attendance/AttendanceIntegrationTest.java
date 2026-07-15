@@ -64,7 +64,8 @@ class AttendanceIntegrationTest {
     admin.setPrenom("Admin");
     userRepository.save(admin);
 
-    String requete = objectMapper.writeValueAsString(new LoginRequest("admin@hbdev.ma", "AdminPass@2025"));
+    String requete =
+        objectMapper.writeValueAsString(new LoginRequest("admin@hbdev.ma", "AdminPass@2025"));
     MvcResult result =
         mockMvc
             .perform(
@@ -79,13 +80,21 @@ class AttendanceIntegrationTest {
   void testQrCodeEtPointageKiosque() throws Exception {
     // 1. Créer un département
     String reqDept = "{\"nom\":\"RH Test\",\"managerId\":null}";
-    String resDept = mockMvc.perform(post("/api/departements").header("Authorization", "Bearer " + adminToken)
-        .contentType(MediaType.APPLICATION_JSON).content(reqDept))
-        .andReturn().getResponse().getContentAsString();
+    String resDept =
+        mockMvc
+            .perform(
+                post("/api/departements")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqDept))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
     String deptId = objectMapper.readTree(resDept).at("/data/id").asText();
 
     // 2. Créer un employé
-    String reqEmp = """
+    String reqEmp =
+        """
         {
           "nom": "Test",
           "prenom": "Employe",
@@ -96,10 +105,18 @@ class AttendanceIntegrationTest {
           "dateEmbauche": "2025-01-01",
           "typeContrat": "CDI"
         }
-        """.formatted(deptId);
-    String resEmp = mockMvc.perform(post("/api/employes").header("Authorization", "Bearer " + adminToken)
-        .contentType(MediaType.APPLICATION_JSON).content(reqEmp))
-        .andReturn().getResponse().getContentAsString();
+        """
+            .formatted(deptId);
+    String resEmp =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqEmp))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
     UUID employeId = UUID.fromString(objectMapper.readTree(resEmp).at("/data/id").asText());
 
     // 3. Générer QR code

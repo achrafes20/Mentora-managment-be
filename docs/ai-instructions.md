@@ -144,13 +144,42 @@ in `docs/02-diagrams-README.md`, database rationale in
 - **Server state: TanStack Query only. Never fetch in `useEffect`.**
 - Routing: React Router (data router). Forms: react-hook-form + zod
   (client validation is UX; real validation is server-side, NFR-SEC-05).
-- Components: **Ant Design** — never build custom tables/date pickers.
+- **Components: Tailwind CSS, styled to the HB Développement Figma design,
+  built on Radix UI primitives (`Dialog`, `Select`, `DropdownMenu`,
+  `Popover`) + `@tanstack/react-table` for data grids.** Decision (2026-07-15):
+  replaces the earlier Ant Design mandate. Never hand-roll a table's
+  sort/filter/pagination or a dialog's focus-trap/keyboard handling from
+  scratch — that reintroduces exactly the maintenance cost the AntD rule
+  existed to avoid for a two-person team. Use the shared wrappers in
+  `src/components/ui/` (`Dialog`, `Select`, `DatePicker`, `DropdownMenu`,
+  `FormField`, `Input`, `Alert`, `Button`, `toast`, `confirm`) instead of
+  reimplementing per screen.
+- **Design tokens: one source.** Brand colors/fonts live as CSS custom
+  properties in `src/styles/theme.css`; `src/components/ui/tokens.ts` is a
+  thin TS-side re-export for non-className contexts (chart colors, inline
+  SVG) — never a second hand-maintained copy of the palette.
 - Client state: session context (role) only. No Redux.
 - API types come from the generated `src/types/api.ts` (see contract
   discipline above) — never hand-written.
 - A component moves to `src/components/` only when a **second** feature
   uses it.
-- UI language is **French**; dates in French format.
+- UI language is **French**; dates in French format (`date-fns` + its `fr`
+  locale; `react-day-picker` for date inputs).
+
+### Mock-first workflow (decision 2026-07-15)
+
+UI may be scaffolded ahead of its backend — wired into the router and
+sidebar, shown live — driven by `src/lib/featureFlags.ts`. Two rules keep
+this from eroding the Definition of Done:
+
+1. Every screen whose flag is still `false` must render the shared
+   `MockBanner` (`src/components/ui/MockBanner.tsx`) — a mock screen is
+   never shown without an explicit, visible indicator that its data isn't
+   real. Never silently ship a mock screen indistinguishable from a
+   finished one.
+2. "No mocks left" still gates a module as done (Quality bar, below): a
+   task isn't complete until its flag flips to `true` and the banner is
+   gone, regardless of how finished the screen looks.
 
 ## Quality bar (Definition of Done for any feature work)
 

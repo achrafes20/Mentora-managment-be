@@ -162,8 +162,7 @@ public class EmployeController {
 
   @DeleteMapping("/{id}/documents/{documentId}")
   @PreAuthorize("hasRole('ADMIN')")
-  public ApiResponse<Void> supprimerDocument(
-      @PathVariable UUID id, @PathVariable UUID documentId) {
+  public ApiResponse<Void> supprimerDocument(@PathVariable UUID id, @PathVariable UUID documentId) {
     employeService.supprimerDocument(id, documentId);
     return ApiResponse.ok();
   }
@@ -171,12 +170,9 @@ public class EmployeController {
   @PutMapping("/{id}/documents/{documentId}")
   @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<EmployeDocumentReponse> remplacerDocument(
-      @PathVariable UUID id,
-      @PathVariable UUID documentId,
-      @RequestPart MultipartFile fichier) {
+      @PathVariable UUID id, @PathVariable UUID documentId, @RequestPart MultipartFile fichier) {
     UUID televersePar = CurrentUser.id().orElse(null);
-    return ApiResponse.ok(
-        employeService.remplacerDocument(id, documentId, fichier, televersePar));
+    return ApiResponse.ok(employeService.remplacerDocument(id, documentId, fichier, televersePar));
   }
 
   @PostMapping("/{id}/carte/envoyer-email")
