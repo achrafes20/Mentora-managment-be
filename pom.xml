@@ -32,6 +32,8 @@
         <spotless.version>2.44.0</spotless.version>
         <checkstyle.version>10.18.2</checkstyle.version>
         <maven-checkstyle-plugin.version>3.5.0</maven-checkstyle-plugin.version>
+        <poi.version>5.3.0</poi.version>
+        <commons-csv.version>1.11.0</commons-csv.version>
     </properties>
 
     <!-- ================================================================
@@ -121,6 +123,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- === Parsing tableur (EF-EMP-07 — import Excel/CSV) === -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>${commons-csv.version}</version>
         </dependency>
 
         <!-- === Lombok — Boilerplate Reduction === -->

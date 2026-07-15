@@ -18,6 +18,12 @@ interface EmployeRepository
 
   boolean existsByEmailIgnoreCase(String email);
 
+  // EF-EMP-07 : clé de dédoublonnage de l'import — pas de matricule dans le modèle actuel
+  // (aucune fiche employé n'en porte un, cf. 01-requirements.md EF-EMP-01), l'e-mail est le seul
+  // champ métier réellement unique sur employes. Décision actée 2026-07-15 : import v1 sur
+  // e-mail, à revoir si RH fournit un identifiant réel dans son fichier.
+  Optional<Employe> findByEmailIgnoreCase(String email);
+
   boolean existsByDepartementIdAndStatut(UUID departementId, StatutActifInactif statut);
 
   List<Employe> findByDepartementIdAndStatut(UUID departementId, StatutActifInactif statut);
