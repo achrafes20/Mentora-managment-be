@@ -21,6 +21,7 @@ public record EmployeReponse(
     String motifDepart,
     String statut,
     UUID photoFichierId,
+    UUID candidatureOrigineId,
     Instant creeLe,
     Instant modifieLe) {
 
@@ -42,6 +43,7 @@ public record EmployeReponse(
         employe.getMotifDepart() == null ? null : employe.getMotifDepart().name(),
         employe.getStatut().name(),
         employe.getPhotoFichierId(),
+        employe.getCandidatureOrigineId(),
         employe.getCreeLe(),
         employe.getModifieLe());
   }

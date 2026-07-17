@@ -38,6 +38,10 @@ public class SecurityConfig {
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
     "/api/kiosque/**",
+    // Appelés par n8n (jamais par un utilisateur connecté) — protégés par InternalWebhookGuard
+    // (secret partagé en en-tête), pas par une session JWT. EF-REC-02/EF-REC-12.
+    "/api/recruitment/ingest",
+    "/api/recruitment/candidatures/archiver-expirees",
     "/v3/api-docs/**",
     "/swagger-ui/**",
     "/swagger-ui.html"

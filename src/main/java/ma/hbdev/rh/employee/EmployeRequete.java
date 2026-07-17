@@ -19,4 +19,12 @@ public record EmployeRequete(
     UUID managerId,
     @NotNull LocalDate dateEmbauche,
     @NotNull TypeContratEmploye typeContrat,
-    LocalDate dateFinContratPrevue) {}
+    LocalDate dateFinContratPrevue,
+    // EF-EMP-05/EF-REC-13 : renseigné par le frontend quand le formulaire "Nouvel employé" a été
+    // ouvert depuis une candidature "Embauchée" (?depuisCandidatureId=), sinon null.
+    UUID candidatureOrigineId,
+    // Idem : le CV déjà stocké (shared/file) au moment de l'ingestion recrutement — attaché tel
+    // quel comme document employé (EF-EMP-03) à la création, pas de reupload. Le frontend le lit
+    // depuis CandidatureReponse.cvFichierId ; le module employé ne connaît jamais la table
+    // `candidatures`, seulement l'UUID d'un fichier déjà stocké (ai-instructions.md règle 4).
+    UUID cvFichierId) {}

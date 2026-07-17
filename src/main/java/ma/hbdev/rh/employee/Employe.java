@@ -71,6 +71,13 @@ class Employe {
   @Column(name = "photo_fichier_id")
   private UUID photoFichierId;
 
+  // EF-EMP-05/EF-REC-13 : renseigné uniquement quand la fiche est créée depuis une candidature
+  // recrutement passée au statut "Embauché" — jamais de ligne créée automatiquement, l'Admin
+  // complète et soumet le formulaire normal (cf. plan T3.B1, décision verrouillée avec Taha :
+  // pas de champ requis employes.* devinable depuis un CV, pas de ligne "incomplète").
+  @Column(name = "candidature_origine_id")
+  private UUID candidatureOrigineId;
+
   @Column(name = "cree_le", insertable = false, updatable = false)
   private Instant creeLe;
 
@@ -89,7 +96,8 @@ class Employe {
       UUID managerId,
       LocalDate dateEmbauche,
       TypeContratEmploye typeContrat,
-      LocalDate dateFinContratPrevue) {
+      LocalDate dateFinContratPrevue,
+      UUID candidatureOrigineId) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -100,6 +108,7 @@ class Employe {
     this.dateEmbauche = dateEmbauche;
     this.typeContrat = typeContrat;
     this.dateFinContratPrevue = dateFinContratPrevue;
+    this.candidatureOrigineId = candidatureOrigineId;
   }
 
   void modifier(
@@ -194,6 +203,10 @@ class Employe {
 
   UUID getPhotoFichierId() {
     return photoFichierId;
+  }
+
+  UUID getCandidatureOrigineId() {
+    return candidatureOrigineId;
   }
 
   Instant getCreeLe() {

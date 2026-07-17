@@ -61,6 +61,15 @@ app:
   file-storage:
     path: ${FILE_STORAGE_PATH:./data/uploads}
     max-size-mb: ${FILE_MAX_SIZE_MB:10}
+  # --- shared/ai (CvAnalysisProvider, EF-REC-04) ---
+  # Clé vide -> NoopCvAnalysisProvider enregistré à la place (dégradation gracieuse, EF-REC-05).
+  ai:
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_MODEL:gemini-2.0-flash}
+  # --- Auth machine-à-machine pour les endpoints appelés uniquement par n8n (EF-REC-02/12) ---
+  security:
+    internal-webhook-secret: ${INTERNAL_WEBHOOK_SECRET:}
 
 # --- Serveur ---
 server:

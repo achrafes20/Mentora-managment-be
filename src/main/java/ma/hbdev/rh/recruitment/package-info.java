@@ -1,2 +1,2 @@
+/** EF-REC — Slice Recrutement (T3.B1). */
 package ma.hbdev.rh.recruitment;
-// Feature package vide — implémentation en T3.A1
