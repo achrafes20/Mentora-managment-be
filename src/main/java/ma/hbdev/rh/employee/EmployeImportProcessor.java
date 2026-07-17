@@ -121,7 +121,9 @@ class EmployeImportProcessor {
                           null,
                           dateEmbauche,
                           typeContrat,
-                          dateFinContratPrevue))
+                          dateFinContratPrevue,
+                          null,
+                          null))
                   .getId();
         }
         StatutLigneImport statut =

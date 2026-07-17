@@ -13,6 +13,12 @@ spring:
     hibernate:
       ddl-auto: validate
 
+app:
+  # Secret fixe pour les tests de RecruitmentIntegrationTest (endpoints ingest/archivage n8n) —
+  # jamais une vraie valeur, aucun rapport avec la prod (cf. InternalWebhookGuard).
+  security:
+    internal-webhook-secret: test-secret-integration
+
 logging:
   level:
     root: WARN

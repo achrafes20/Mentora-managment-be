@@ -1,0 +1,116 @@
+{
+  "updatedAt": "2026-07-15T00:00:00.000Z",
+  "createdAt": "2026-07-15T00:00:00.000Z",
+  "id": "T3B1RecrutementImapIngest001",
+  "name": "T3.B1 - IMAP vers ingestion recrutement",
+  "description": "EF-REC-02/03 : surveille la boite mail recrutement et transfere chaque e-mail brut (expediteur, sujet, corps, piece jointe CV) tel quel au backend - aucune normalisation ici (ai-instructions.md regle 7, n8n = transport only).",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "imap-trigger-1",
+      "name": "IMAP Recrutement",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "mailbox": "INBOX",
+        "format": "resolved",
+        "options": {}
+      },
+      "credentials": {
+        "imap": {
+          "id": "recrutement-imap-dev",
+          "name": "IMAP Recrutement (dev)"
+        }
+      }
+    },
+    {
+      "id": "http-ingest-1",
+      "name": "POST /api/recruitment/ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8080/api/recruitment/ingest",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "emailExpediteur",
+              "value": "={{ $json.from ? $json.from.value[0].address : $json.from }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "nomExpediteur",
+              "value": "={{ $json.from ? ($json.from.value[0].name || '') : '' }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "sujet",
+              "value": "={{ $json.subject }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "corps",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "referenceSourceImport",
+              "value": "={{ 'imap:' + ($json.messageId || $json.date) }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "cv",
+              "inputDataFieldName": "attachment_0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "recrutement-webhook-secret-dev",
+          "name": "Recrutement Webhook Secret (dev)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "IMAP Recrutement": {
+      "main": [
+        [
+          {
+            "node": "POST /api/recruitment/ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "nodeGroups": [],
+  "pinData": null,
+  "versionId": "t3b1-imap-ingest-v1",
+  "activeVersionId": "t3b1-imap-ingest-v1",
+  "versionCounter": 1,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}
