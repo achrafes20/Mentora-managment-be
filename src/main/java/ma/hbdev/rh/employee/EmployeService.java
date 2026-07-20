@@ -115,7 +115,11 @@ class EmployeService {
                 requete.typeContrat(),
                 requete.dateFinContratPrevue(),
                 requete.candidatureOrigineId()));
-    evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "creation"));
+    evenements.publishEvent(
+        EmployeModifieEvent.creation(
+            employe.getId(),
+            employe.getManagerId() != null ? employe.getManagerId() : departement.getManagerId(),
+            employe.getPrenom() + " " + employe.getNom()));
     // EF-EMP-03/EF-EMP-05 : le CV déjà stocké au moment de l'ingestion recrutement est rattaché
     // tel quel comme document employé — pas de reupload, le fichier existe déjà dans shared/file.
     if (requete.cvFichierId() != null) {

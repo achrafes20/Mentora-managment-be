@@ -5,12 +5,14 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import ma.hbdev.rh.auth.AuthException;
 import ma.hbdev.rh.auth.UserNotFoundException;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
@@ -77,6 +79,11 @@ public class GlobalExceptionHandler {
   /** Catch-all — toute exception non gérée → 500 (sans détail interne). */
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
+    ResponseStatus responseStatus =
+        AnnotatedElementUtils.findMergedAnnotation(ex.getClass(), ResponseStatus.class);
+    if (responseStatus != null) {
+      return ResponseEntity.status(responseStatus.code()).body(ApiResponse.error(ex.getMessage()));
+    }
     log.error("Erreur interne non gérée", ex);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(ApiResponse.error("Une erreur interne est survenue"));

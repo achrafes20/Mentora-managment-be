@@ -65,6 +65,7 @@ public class UserService {
     user.setRole(request.role());
     user.setNom(request.nom());
     user.setPrenom(request.prenom());
+    user.setMattermostUserId(normaliserMattermostUserId(request.mattermostUserId()));
     user.setStatut(StatutActifInactif.actif);
     user.setCreeLe(Instant.now());
     user.setModifieLe(Instant.now());
@@ -82,6 +83,7 @@ public class UserService {
     user.setRole(request.role());
     user.setNom(request.nom());
     user.setPrenom(request.prenom());
+    user.setMattermostUserId(normaliserMattermostUserId(request.mattermostUserId()));
     user.setModifieLe(Instant.now());
 
     User saved = userRepository.save(user);
@@ -127,5 +129,12 @@ public class UserService {
 
     log.info("Compte réactivé : {}", user.getEmail());
     return UserResponse.fromUser(user);
+  }
+
+  private String normaliserMattermostUserId(String mattermostUserId) {
+    if (mattermostUserId == null || mattermostUserId.isBlank()) {
+      return null;
+    }
+    return mattermostUserId.trim();
   }
 }

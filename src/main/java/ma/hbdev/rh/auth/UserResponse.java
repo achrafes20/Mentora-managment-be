@@ -9,6 +9,7 @@ public record UserResponse(
     RoleUtilisateur role,
     String nom,
     String prenom,
+    String mattermostUserId,
     StatutActifInactif statut,
     Instant creeLe,
     Instant modifieLe) {
@@ -19,6 +20,7 @@ public record UserResponse(
         user.getRole(),
         user.getNom(),
         user.getPrenom(),
+        user.getMattermostUserId(),
         user.getStatut(),
         user.getCreeLe(),
         user.getModifieLe());

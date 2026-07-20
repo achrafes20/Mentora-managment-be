@@ -66,6 +66,7 @@ class ImportIntegrationTest {
 
   @BeforeEach
   void nettoyerEtAuthentifier() throws Exception {
+    nettoyerTracesTransverses();
     importLotRepository.deleteAll();
     mouvementCongeRepository.deleteAll();
     transfertRepository.deleteAll();
@@ -94,6 +95,11 @@ class ImportIntegrationTest {
 
     adminToken = login("admin@hbdev.ma", "AdminPass@2025");
     managerToken = login("manager@hbdev.ma", "ManagerPass@2025");
+  }
+
+  private void nettoyerTracesTransverses() {
+    jdbcTemplate.execute(
+        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit");
   }
 
   private String login(String email, String motDePasse) throws Exception {

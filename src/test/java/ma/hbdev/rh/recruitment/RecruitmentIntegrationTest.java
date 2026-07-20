@@ -63,6 +63,7 @@ class RecruitmentIntegrationTest {
 
   @BeforeEach
   void authentifierEtCreerDepartement() throws Exception {
+    nettoyerTracesTransverses();
     // Ordre imposé par les FK : candidatures.analyse_courante_id -> analyses_ia(id) (pas de
     // cascade) interdit de supprimer analyses_ia avant candidatures. envois_documents référence
     // candidatures sans cascade non plus, donc il doit partir en premier. Une fois candidatures
@@ -104,6 +105,11 @@ class RecruitmentIntegrationTest {
         departementId,
         "Ingenierie " + UUID.randomUUID(),
         managerId);
+  }
+
+  private void nettoyerTracesTransverses() {
+    jdbcTemplate.execute(
+        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit");
   }
 
   private String login(String email, String motDePasse) throws Exception {
