@@ -32,7 +32,9 @@ class MattermostNotificationEventListener {
 
     ResultatMattermost resultat;
     try {
-      resultat = mattermostClient.envoyer(formaterMessage(notification));
+      resultat =
+          mattermostClient.envoyerMessagePrive(
+              notification.destinataireId(), formaterMessage(notification));
     } catch (RuntimeException exception) {
       log.warn("Echec inattendu du client Mattermost", exception);
       resultat = ResultatMattermost.echec(exception.getClass().getSimpleName());

@@ -1,5 +1,7 @@
 package ma.hbdev.rh.shared.mattermost;
 
+import java.util.UUID;
+
 public interface MattermostClient {
-  ResultatMattermost envoyer(String message);
+  ResultatMattermost envoyerMessagePrive(UUID destinataireId, String message);
 }

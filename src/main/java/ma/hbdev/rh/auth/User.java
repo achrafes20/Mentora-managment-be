@@ -35,6 +35,9 @@ public class User {
   @Column(name = "prenom", nullable = false, length = 100)
   private String prenom;
 
+  @Column(name = "mattermost_user_id", length = 64, unique = true)
+  private String mattermostUserId;
+
   @Enumerated(EnumType.STRING)
   @JdbcType(PostgreSQLEnumJdbcType.class)
   @Column(name = "statut", nullable = false)

@@ -2,6 +2,7 @@ package ma.hbdev.rh.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,7 +63,8 @@ class NotificationEventListenerTest {
             evenement.module(),
             evenement.entiteType(),
             evenement.entiteId());
-    when(mattermostClient.envoyer(any(String.class)))
+    when(mattermostClient.envoyerMessagePrive(
+            eq(evenement.notification().destinataireId()), any(String.class)))
         .thenReturn(ResultatMattermost.echec("service indisponible"));
     when(inAppRepository.findById(evenement.notification().id())).thenReturn(Optional.of(inApp));
 

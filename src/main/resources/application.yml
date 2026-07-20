@@ -57,7 +57,10 @@ spring:
 # --- Custom App Configurations ---
 app:
   mattermost:
-    webhook-url: ${MATTERMOST_WEBHOOK_URL:}
+    base-url: ${MATTERMOST_BASE_URL:}
+    bot-token: ${MATTERMOST_BOT_TOKEN:}
+    bot-user-id: ${MATTERMOST_BOT_USER_ID:}
+    lookup-user-by-email: ${MATTERMOST_LOOKUP_USER_BY_EMAIL:true}
     connect-timeout-ms: ${MATTERMOST_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${MATTERMOST_READ_TIMEOUT_MS:5000}
   notifications:
