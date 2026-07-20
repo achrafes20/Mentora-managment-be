@@ -221,7 +221,13 @@ class CandidatureService {
       throw new ManagerRequisPourEntretienException();
     }
     entretienRepository.save(new Entretien(candidature.getId(), managerId, dateEntretien));
-    evenements.publishEvent(new CandidatureEntretienEvent(candidature.getId(), managerId));
+    String nomComplet =
+        ((candidature.getPrenom() == null ? "" : candidature.getPrenom())
+                + " "
+                + (candidature.getNom() == null ? "" : candidature.getNom()))
+            .trim();
+    evenements.publishEvent(
+        CandidatureEntretienEvent.pourCandidat(candidature.getId(), managerId, nomComplet));
   }
 
   // EF-REC-14 : e-mail de rejet, corps standard éditable par l'Admin avant envoi, journalisé

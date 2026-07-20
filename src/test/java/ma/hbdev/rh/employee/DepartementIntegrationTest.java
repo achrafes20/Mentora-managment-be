@@ -20,6 +20,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -47,12 +48,14 @@ class DepartementIntegrationTest {
   @Autowired private UserRepository userRepository;
   @Autowired private SessionRepository sessionRepository;
   @Autowired private PasswordEncoder passwordEncoder;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private String adminToken;
   private String managerToken;
 
   @BeforeEach
   void authentifierAdminEtManager() throws Exception {
+    nettoyerTracesTransverses();
     sessionRepository.deleteAll();
     userRepository.deleteAll();
 
@@ -74,6 +77,11 @@ class DepartementIntegrationTest {
 
     adminToken = login("admin@hbdev.ma", "AdminPass@2025");
     managerToken = login("manager@hbdev.ma", "ManagerPass@2025");
+  }
+
+  private void nettoyerTracesTransverses() {
+    jdbcTemplate.execute(
+        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit");
   }
 
   private String login(String email, String motDePasse) throws Exception {

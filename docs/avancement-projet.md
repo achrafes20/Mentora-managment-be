@@ -257,7 +257,7 @@ ont besoin, puis les Demandes.*
 
 ### Achraf
 
-- [ ] **T3.A1 — Socle notifications (cross-cutting).**
+- [x] **T3.A1 — Socle notifications (cross-cutting).**
   Pattern événements Spring (`shared/` : publication) + trois écouteurs :
   `notifications_in_app` (créée systématiquement, EF-NOTIF-01),
   `notifications_mattermost` (client webhook `shared/mattermost`, échec
@@ -266,6 +266,13 @@ ont besoin, puis les Demandes.*
   par les modules des phases 1-2 sont branchés ici rétroactivement).
   Frontend : badge cloche + centre de notifications (liste, lu/non-lu,
   EF-NOTIF-02→05).
+  **Terminé le 2026-07-20 :** contrat d'événement commun dans `shared/event`, audit de tous les
+  événements déjà publiés, notifications in-app et Mattermost pour la création d'employé et la
+  planification d'entretien, résultat Mattermost persisté sans bloquer l'in-app, API sécurisée
+  propre au destinataire, lecture individuelle/globale et archivage configurable à 90 jours.
+  Frontend réel avec badge, panneau actualisé et centre paginé ; OpenAPI/types régénérés. Tests :
+  4 tests unitaires backend, 3 tests d'intégration PostgreSQL/Testcontainers et 6 tests frontend
+  dédiés, plus `mvn verify` complet et build frontend verts.
 - [ ] **T3.A2 — Slice Demandes administratives (EF-ADM).**
   `demandes_administratives` (congé / bon de sortie / document libre,
   CHECK par type), workflow d'approbation manager→admin selon RBAC,

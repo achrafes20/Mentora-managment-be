@@ -65,6 +65,7 @@ class EmployeIntegrationTest {
 
   @BeforeEach
   void authentifierEtCreerDepartements() throws Exception {
+    nettoyerTracesTransverses();
     // Ordre imposé par les FK effectue_par/televerse_par/manager_id -> utilisateurs (T1.C1) : les
     // tables qui référencent un utilisateur doivent être vidées avant de pouvoir supprimer les
     // utilisateurs des tests précédents.
@@ -105,6 +106,11 @@ class EmployeIntegrationTest {
             .getId();
     autreDepartementId =
         departementRepository.save(new Departement("Ventes " + UUID.randomUUID(), null)).getId();
+  }
+
+  private void nettoyerTracesTransverses() {
+    jdbcTemplate.execute(
+        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit");
   }
 
   private String login(String email, String motDePasse) throws Exception {
