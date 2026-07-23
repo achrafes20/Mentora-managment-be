@@ -24,4 +24,10 @@ public record CandidatureModifieEvent(UUID candidatureId, String action)
   public UUID entiteId() {
     return candidatureId;
   }
+
+  /** EF-AUTH-14 : la décision de recrutement, pas les statuts intermédiaires du pipeline. */
+  @Override
+  public boolean decisionDelegable() {
+    return "statut_embauche".equals(action) || "statut_rejete".equals(action);
+  }
 }

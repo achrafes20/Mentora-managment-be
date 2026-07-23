@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <ul>
  *   <li>GET /api/users – liste tous les comptes
+ *   <li>GET /api/users/managers – comptes Manager actifs uniquement (ouvert à un délégué actif)
  *   <li>GET /api/users/{id} – détail d'un compte
  *   <li>POST /api/users – création d'un compte admin/manager
  *   <li>PUT /api/users/{id} – mise à jour (rôle, nom, prénom)
@@ -46,6 +47,19 @@ public class UserController {
   @Operation(summary = "Liste tous les comptes")
   public ResponseEntity<ApiResponse<List<UserResponse>>> findAll() {
     return ResponseEntity.ok(ApiResponse.ok(userService.findAll()));
+  }
+
+  /**
+   * EF-AUTH-11/12 : seul sous-ensemble de {@link #findAll()} accessible à un délégué actif — un
+   * picker manager (transfert employé, assignation d'entretien) n'a pas besoin, et ne doit pas
+   * exposer, la liste complète des comptes (ce qui relèverait de la "gestion des comptes
+   * utilisateurs", explicitement jamais déléguée).
+   */
+  @GetMapping("/managers")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
+  @Operation(summary = "Comptes Manager actifs (pour sélecteurs)")
+  public ResponseEntity<ApiResponse<List<UserResponse>>> listerManagers() {
+    return ResponseEntity.ok(ApiResponse.ok(userService.listerManagersActifs()));
   }
 
   @GetMapping("/{id}")

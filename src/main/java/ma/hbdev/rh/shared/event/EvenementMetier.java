@@ -22,4 +22,14 @@ public interface EvenementMetier {
   default NotificationMetier notification() {
     return null;
   }
+
+  /**
+   * EF-AUTH-14 : vrai pour une action d'approbation, de rejet ou de décision de recrutement.
+   * L'écouteur d'audit s'en sert pour marquer l'entrée comme réalisée en délégation lorsque
+   * l'auteur courant est un délégué actif — jamais pour les actions de gestion de la délégation
+   * elle-même (EF-AUTH-12).
+   */
+  default boolean decisionDelegable() {
+    return false;
+  }
 }

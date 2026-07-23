@@ -4,7 +4,7 @@
 #  dans le même dossier workspace (voir README.md).
 # =====================================================================
 
-.PHONY: up down test lint openapi-export n8n-export n8n-import help
+.PHONY: up down test lint openapi-export n8n-export n8n-import reset-db seed-dev help
 
 ## Démarre tous les services (backend + postgres + frontend)
 up:
@@ -59,6 +59,23 @@ n8n-import:
 	docker compose exec n8n n8n import:workflow --separate --input=/n8n/workflows/ 2>/dev/null || \
 		echo "ERREUR : le service n8n n'est pas démarré. Lancez 'make up-d' d'abord."
 
+## Base de données fraîche : supprime uniquement le volume Postgres (rh_pgdata),
+## jamais celui de n8n (workflows/credentials), puis reconstruit et redémarre.
+reset-db:
+	@echo "==> Arrêt de la stack..."
+	docker compose down
+	@echo "==> Suppression du volume Postgres (rh_pgdata uniquement, n8n conservé)..."
+	docker volume rm -f rh_pgdata
+	@echo "==> Reconstruction et redémarrage..."
+	docker compose up --build -d
+	@echo "==> Base de données réinitialisée. Lancez 'make seed-dev' une fois le backend healthy."
+
+## Seed de données de dev (2 comptes Manager + 3 départements) via l'API réelle —
+## jamais par migration SQL (ai-instructions.md, comptes/départements ne sont pas
+## de la donnée de référence). Rejouable après chaque 'make reset-db'.
+seed-dev:
+	@sh scripts/seed-dev-data.sh
+
 ## Installe les git hooks locaux pour la validation automatique pre-commit
 install-hooks:
 	@echo "==> Installation des hooks de pré-validation..."
@@ -81,5 +98,7 @@ help:
 	@echo "  make openapi-export — Génère contracts/openapi.json"
 	@echo "  make n8n-export    — Exporte les workflows n8n"
 	@echo "  make n8n-import    — Importe les workflows n8n"
+	@echo "  make reset-db      — Volume Postgres frais (n8n conservé) + rebuild"
+	@echo "  make seed-dev      — Seed comptes Manager + départements de dev (via API)"
 	@echo "  make install-hooks — Installe le hook Git de pré-validation"
 	@echo ""

@@ -71,6 +71,15 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(PUBLIC_PATHS)
                     .permitAll()
+                    // EF-AUTH-11/12 : seule exception à la règle "/api/users/** = ADMIN"
+                    // ci-dessous — UserController#listerManagers() affine lui-même l'accès
+                    // via @PreAuthorize ("hasRole('ADMIN') or
+                    // @delegationService.estDelegueActif()"),
+                    // ce filtre au niveau de la chaîne ne fait que laisser passer un utilisateur
+                    // authentifié jusque-là. Doit précéder la règle générale (le premier
+                    // requestMatchers qui matche gagne).
+                    .requestMatchers("/api/users/managers")
+                    .authenticated()
                     .requestMatchers("/api/users/**")
                     .hasRole("ADMIN")
                     .anyRequest()

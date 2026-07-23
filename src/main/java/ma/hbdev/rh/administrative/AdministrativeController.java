@@ -47,20 +47,22 @@ class AdministrativeController {
     return ApiResponse.ok(service.creer(requete));
   }
 
+  // EF-AUTH-11/12 : décision + actions adjacentes ouvertes au délégué actif, même précédent que
+  // CandidatureController/OffreEmploiController (T3.B1) — jours fériés/config restent Admin-only.
   @PatchMapping("/{id}/approuver")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   ApiResponse<DemandeAdministrativeReponse> approuver(@PathVariable UUID id) {
     return ApiResponse.ok(service.approuver(id));
   }
 
   @PatchMapping("/{id}/rejeter")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   ApiResponse<DemandeAdministrativeReponse> rejeter(@PathVariable UUID id) {
     return ApiResponse.ok(service.rejeter(id));
   }
 
   @PatchMapping("/{id}/annuler")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   ApiResponse<DemandeAdministrativeReponse> annuler(@PathVariable UUID id) {
     return ApiResponse.ok(service.annuler(id));
   }

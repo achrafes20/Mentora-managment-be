@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import ma.hbdev.rh.auth.DelegationService;
 import ma.hbdev.rh.shared.config.ConfigurationService;
 import ma.hbdev.rh.shared.file.FichierUploade;
 import ma.hbdev.rh.shared.file.FileStorageService;
@@ -56,6 +57,7 @@ class CandidatureService {
   private final MailService mailService;
   private final FileStorageService fileStorageService;
   private final ApplicationEventPublisher evenements;
+  private final DelegationService delegationService;
 
   CandidatureService(
       CandidatureRepository candidatureRepository,
@@ -64,7 +66,8 @@ class CandidatureService {
       ConfigurationService configurationService,
       MailService mailService,
       FileStorageService fileStorageService,
-      ApplicationEventPublisher evenements) {
+      ApplicationEventPublisher evenements,
+      DelegationService delegationService) {
     this.candidatureRepository = candidatureRepository;
     this.entretienRepository = entretienRepository;
     this.envoiDocumentRepository = envoiDocumentRepository;
@@ -72,6 +75,7 @@ class CandidatureService {
     this.mailService = mailService;
     this.fileStorageService = fileStorageService;
     this.evenements = evenements;
+    this.delegationService = delegationService;
   }
 
   @Transactional(readOnly = true)
@@ -82,7 +86,9 @@ class CandidatureService {
       String recherche,
       Pageable pageable) {
     var spec = CandidatureSpecifications.filtrer(offreId, statut, scoreMin, recherche);
-    if (CurrentUser.hasRole("MANAGER") && !CurrentUser.hasRole("ADMIN")) {
+    if (CurrentUser.hasRole("MANAGER")
+        && !CurrentUser.hasRole("ADMIN")
+        && !delegationService.estDelegueActif()) {
       UUID managerId =
           CurrentUser.id().orElseThrow(() -> new AccessDeniedException("Non authentifié"));
       spec = spec.and(CandidatureSpecifications.pourManager(managerId));
@@ -101,9 +107,13 @@ class CandidatureService {
   }
 
   // EF-REC-08 : le Manager n'a accès qu'aux candidatures pour lesquelles un entretien lui a été
-  // assigné (même principe que EmployeService.verifierPerimetreManager pour EF-AUTH-03).
+  // assigné (même principe que EmployeService.verifierPerimetreManager pour EF-AUTH-03) — sauf
+  // délégué actif (EF-AUTH-11/12), qui doit voir tout le vivier pour exercer ses droits de
+  // décision (cf. lister() ci-dessus, même garde).
   private void verifierPerimetreManager(Candidature candidature) {
-    if (!CurrentUser.hasRole("MANAGER") || CurrentUser.hasRole("ADMIN")) {
+    if (!CurrentUser.hasRole("MANAGER")
+        || CurrentUser.hasRole("ADMIN")
+        || delegationService.estDelegueActif()) {
       return;
     }
     UUID managerId =

@@ -63,7 +63,7 @@ public class CandidatureController {
   }
 
   @PostMapping("/{id}/statut")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<CandidatureReponse> changerStatut(
       @PathVariable UUID id, @Valid @RequestBody ChangerStatutRequete requete) {
     return ApiResponse.ok(
@@ -79,7 +79,7 @@ public class CandidatureController {
   // EF-REC-09 : seule action de l'Admin pendant l'étape Entretien (avec le rejet) — tant qu'aucun
   // résultat n'a été rendu par le Manager.
   @PostMapping("/{id}/entretien/reprogrammer")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<EntretienReponse> reprogrammerEntretien(
       @PathVariable UUID id, @Valid @RequestBody ReprogrammerEntretienRequete requete) {
     return ApiResponse.ok(
@@ -89,14 +89,14 @@ public class CandidatureController {
   }
 
   @PostMapping("/{id}/relancer-analyse")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<CandidatureReponse> relancerAnalyse(@PathVariable UUID id) {
     candidatureIngestionService.relancerAnalyse(id);
     return ApiResponse.ok(CandidatureReponse.depuis(candidatureService.trouver(id)));
   }
 
   @PostMapping("/{id}/reactiver")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<CandidatureReponse> validerReactivation(@PathVariable UUID id) {
     return ApiResponse.ok(CandidatureReponse.depuis(candidatureService.validerReactivation(id)));
   }

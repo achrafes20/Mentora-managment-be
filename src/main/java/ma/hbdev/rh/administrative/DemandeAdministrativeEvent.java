@@ -29,6 +29,12 @@ record DemandeAdministrativeEvent(
     return demandeId;
   }
 
+  /** EF-AUTH-14 : approbation/rejet/annulation sont les décisions déléguables sur une demande. */
+  @Override
+  public boolean decisionDelegable() {
+    return "approbation".equals(action) || "rejet".equals(action) || "annulation".equals(action);
+  }
+
   @Override
   public NotificationMetier notification() {
     if (managerId == null || !("approbation".equals(action) || "rejet".equals(action))) {

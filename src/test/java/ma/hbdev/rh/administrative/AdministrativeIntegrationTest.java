@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.UUID;
 import ma.hbdev.rh.auth.LoginRequest;
@@ -111,6 +112,11 @@ class AdministrativeIntegrationTest {
 
   @Test
   void adminApprouvePuisAnnuleUnCongeAvecLedgerEtNotificationManager() throws Exception {
+    // Lundi->mardi (jamais dimanche, seul jour exclu du calcul de duree()) : garantit 2 jours
+    // ouvres quel que soit le jour d'execution du test, plutot qu'un plusDays(3)/plusDays(4)
+    // hardcode qui echoue des que la fenetre glisse sur un dimanche (cf. echec du 2026-07-22).
+    LocalDate debut = prochainLundiAuMoins(3);
+    LocalDate fin = debut.plusDays(1);
     String demandeId =
         objectMapper
             .readTree(
@@ -124,10 +130,7 @@ class AdministrativeIntegrationTest {
                                 {"employeId":"%s","typeDemande":"conge","granularite":"journee",
                                  "dateDebut":"%s","dateFin":"%s","motif":"Repos"}
                                 """
-                                    .formatted(
-                                        employeId,
-                                        LocalDate.now().plusDays(3),
-                                        LocalDate.now().plusDays(4))))
+                                    .formatted(employeId, debut, fin)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.statut").value("en_attente"))
                     .andReturn()
@@ -209,7 +212,9 @@ class AdministrativeIntegrationTest {
 
   @Test
   void joursFeriesSontGeresEtExclusDuCalculDeDuree() throws Exception {
-    LocalDate ferie = LocalDate.now().plusDays(8);
+    // Meme raisonnement que ci-dessus : un lundi garantit que ferie et ferie+1 (mardi) ne tombent
+    // jamais un dimanche, quel que soit le jour d'execution du test.
+    LocalDate ferie = prochainLundiAuMoins(8);
     mockMvc
         .perform(
             post("/api/demandes-administratives/jours-feries")
@@ -235,6 +240,15 @@ class AdministrativeIntegrationTest {
                         .formatted(employeId, ferie, ferie.plusDays(1))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.dureeJours").value(1));
+  }
+
+  /** Premier lundi a au moins {@code joursMinimum} jours de calendrier a partir d'aujourd'hui. */
+  private LocalDate prochainLundiAuMoins(int joursMinimum) {
+    LocalDate date = LocalDate.now().plusDays(joursMinimum);
+    while (date.getDayOfWeek() != DayOfWeek.MONDAY) {
+      date = date.plusDays(1);
+    }
+    return date;
   }
 
   private User utilisateur(String email, RoleUtilisateur role) {
