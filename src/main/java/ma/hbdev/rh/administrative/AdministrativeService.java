@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import ma.hbdev.rh.auth.DelegationService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -29,18 +30,21 @@ class AdministrativeService {
   private final JourFerieRepository jourFerieRepository;
   private final JdbcTemplate jdbcTemplate;
   private final ApplicationEventPublisher evenements;
+  private final DelegationService delegationService;
 
   AdministrativeService(
       DemandeAdministrativeRepository demandeRepository,
       MouvementCongeAdmRepository mouvementRepository,
       JourFerieRepository jourFerieRepository,
       JdbcTemplate jdbcTemplate,
-      ApplicationEventPublisher evenements) {
+      ApplicationEventPublisher evenements,
+      DelegationService delegationService) {
     this.demandeRepository = demandeRepository;
     this.mouvementRepository = mouvementRepository;
     this.jourFerieRepository = jourFerieRepository;
     this.jdbcTemplate = jdbcTemplate;
     this.evenements = evenements;
+    this.delegationService = delegationService;
   }
 
   @Transactional(readOnly = true)
@@ -67,7 +71,11 @@ class AdministrativeService {
     if (fin != null) {
       spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("dateFin"), fin));
     }
-    if (CurrentUser.hasRole("MANAGER")) {
+    // EF-AUTH-11/12 : un délégué actif voit tout le périmètre (comme l'Admin) pour pouvoir
+    // décider — sinon un délégué approuvant hors de sa propre équipe ne verrait jamais la
+    // demande apparaître dans sa liste (bug E2E repéré le 2026-07-23, même défaut que
+    // CandidatureService.lister()).
+    if (CurrentUser.hasRole("MANAGER") && !delegationService.estDelegueActif()) {
       UUID managerId = utilisateurCourant();
       List<UUID> employesManager =
           jdbcTemplate.queryForList(
@@ -97,7 +105,7 @@ class AdministrativeService {
 
   DemandeAdministrativeReponse approuver(UUID id) {
     DemandeAdministrative demande = trouver(id);
-    verifierAdmin();
+    verifierAdminOuDelegue();
     if (demande.getStatut() != StatutDemandeAdministrative.en_attente) {
       throw new IllegalArgumentException("Seule une demande en attente peut etre approuvee");
     }
@@ -125,7 +133,7 @@ class AdministrativeService {
 
   DemandeAdministrativeReponse rejeter(UUID id) {
     DemandeAdministrative demande = trouver(id);
-    verifierAdmin();
+    verifierAdminOuDelegue();
     if (demande.getStatut() != StatutDemandeAdministrative.en_attente) {
       throw new IllegalArgumentException("Seule une demande en attente peut etre rejetee");
     }
@@ -139,7 +147,7 @@ class AdministrativeService {
 
   DemandeAdministrativeReponse annuler(UUID id) {
     DemandeAdministrative demande = trouver(id);
-    verifierAdmin();
+    verifierAdminOuDelegue();
     if (demande.getStatut() != StatutDemandeAdministrative.approuvee) {
       throw new IllegalArgumentException("Seule une demande approuvee peut etre annulee");
     }
@@ -165,14 +173,14 @@ class AdministrativeService {
   @Transactional(readOnly = true)
   SoldeCongeReponse solde(UUID employeId) {
     EmployeInfo employe = employe(employeId);
-    verifierPerimetreManager(employe);
+    verifierPerimetreManagerOuDelegue(employe);
     return new SoldeCongeReponse(employeId, employe.nomComplet(), solde(employe));
   }
 
   @Transactional(readOnly = true)
   java.util.List<MouvementCongeReponse> mouvements(UUID employeId) {
     EmployeInfo employe = employe(employeId);
-    verifierPerimetreManager(employe);
+    verifierPerimetreManagerOuDelegue(employe);
     return mouvementRepository.findByEmployeIdOrderByDateMouvementDescCreeLeDesc(employeId).stream()
         .map(MouvementCongeReponse::depuis)
         .toList();
@@ -349,9 +357,28 @@ class AdministrativeService {
     }
   }
 
+  // EF-AUTH-11/12 : variante utilisée pour solde()/mouvements(), consultées pour instruire une
+  // décision d'approbation — un délégué doit pouvoir les lire hors de sa propre équipe. Jamais
+  // utilisée par creer() : créer une demande pour un employé qu'on ne gère pas n'est pas un
+  // droit d'approbation délégable, seulement une commodité Admin.
+  private void verifierPerimetreManagerOuDelegue(EmployeInfo employe) {
+    if (delegationService.estDelegueActif()) {
+      return;
+    }
+    verifierPerimetreManager(employe);
+  }
+
   private void verifierAdmin() {
     if (!CurrentUser.hasRole("ADMIN")) {
       throw new AccessDeniedException("Action reservee admin");
+    }
+  }
+
+  // EF-AUTH-11/12 : decision + actions adjacentes (approuver/rejeter/annuler) ouvertes au delegue
+  // actif — jours feries/config restent verifierAdmin() strict, jamais delegables.
+  private void verifierAdminOuDelegue() {
+    if (!CurrentUser.hasRole("ADMIN") && !delegationService.estDelegueActif()) {
+      throw new AccessDeniedException("Action reservee admin (ou delegue actif)");
     }
   }
 

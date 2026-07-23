@@ -46,27 +46,27 @@ public class OffreEmploiController {
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<OffreEmploiReponse> creer(@Valid @RequestBody OffreEmploiRequete requete) {
     UUID creePar = CurrentUser.id().orElse(null);
     return ApiResponse.ok(OffreEmploiReponse.depuis(offreEmploiService.creer(requete, creePar)));
   }
 
   @PutMapping("/{id}")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<OffreEmploiReponse> modifier(
       @PathVariable UUID id, @Valid @RequestBody OffreEmploiRequete requete) {
     return ApiResponse.ok(OffreEmploiReponse.depuis(offreEmploiService.modifier(id, requete)));
   }
 
   @PostMapping("/{id}/fermer")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<OffreEmploiReponse> fermer(@PathVariable UUID id) {
     return ApiResponse.ok(OffreEmploiReponse.depuis(offreEmploiService.fermer(id)));
   }
 
   @PostMapping("/{id}/rouvrir")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
   public ApiResponse<OffreEmploiReponse> rouvrir(@PathVariable UUID id) {
     return ApiResponse.ok(OffreEmploiReponse.depuis(offreEmploiService.rouvrir(id)));
   }

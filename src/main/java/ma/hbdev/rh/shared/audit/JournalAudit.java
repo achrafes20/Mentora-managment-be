@@ -50,17 +50,26 @@ class JournalAudit {
   @Column(name = "en_delegation", nullable = false)
   private boolean enDelegation;
 
+  @Column(name = "delegation_id")
+  private UUID delegationId;
+
   @Column(nullable = false, insertable = false, updatable = false)
   private Instant horodatage;
 
   protected JournalAudit() {}
 
-  JournalAudit(EvenementMetier evenement, UUID utilisateurId, JsonNode details) {
+  /**
+   * @param delegationId EF-AUTH-14 : id de la délégation active sous laquelle l'action a été
+   *     réalisée, ou {@code null} si l'auteur agissait avec ses propres droits.
+   */
+  JournalAudit(EvenementMetier evenement, UUID utilisateurId, JsonNode details, UUID delegationId) {
     this.utilisateurId = utilisateurId;
     this.action = evenement.action();
     this.module = evenement.module();
     this.entiteType = evenement.entiteType();
     this.entiteId = evenement.entiteId();
     this.details = details;
+    this.delegationId = delegationId;
+    this.enDelegation = delegationId != null;
   }
 }

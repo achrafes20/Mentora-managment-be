@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import ma.hbdev.rh.auth.AuthException;
+import ma.hbdev.rh.auth.DelegationNotFoundException;
 import ma.hbdev.rh.auth.UserNotFoundException;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.HttpStatus;
@@ -67,6 +68,13 @@ public class GlobalExceptionHandler {
   /** Ressource non trouvée (404). */
   @ExceptionHandler(UserNotFoundException.class)
   public ResponseEntity<ApiResponse<Void>> handleNotFound(UserNotFoundException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  /** Délégation introuvable (404). */
+  @ExceptionHandler(DelegationNotFoundException.class)
+  public ResponseEntity<ApiResponse<Void>> handleDelegationNotFound(
+      DelegationNotFoundException ex) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
   }
 

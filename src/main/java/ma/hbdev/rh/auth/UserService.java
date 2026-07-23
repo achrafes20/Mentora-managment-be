@@ -37,6 +37,22 @@ public class UserService {
     return userRepository.findAll().stream().map(UserResponse::fromUser).toList();
   }
 
+  /**
+   * EF-AUTH-11/12 : comptes Manager actifs uniquement — jamais les comptes Admin ni les champs de
+   * {@link #findAll()} non nécessaires à un sélecteur (picker manager pour transfert employé,
+   * assignation d'entretien...). Volontairement plus étroit que {@link #findAll()} : accessible à
+   * un délégué actif (cf. {@code UserController}), qui ne doit jamais hériter d'une visibilité
+   * complète sur la gestion des comptes (EF-AUTH-12).
+   */
+  @Transactional(readOnly = true)
+  public List<UserResponse> listerManagersActifs() {
+    return userRepository
+        .findByRoleAndStatut(RoleUtilisateur.manager, StatutActifInactif.actif)
+        .stream()
+        .map(UserResponse::fromUser)
+        .toList();
+  }
+
   /** Retourne un utilisateur par son id. */
   @Transactional(readOnly = true)
   public UserResponse findById(UUID id) {

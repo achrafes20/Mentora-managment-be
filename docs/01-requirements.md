@@ -106,6 +106,9 @@ Le système couvre neuf modules métier, articulés autour d'un cycle de vie emp
 - **EF-ATT-05** : Le système doit permettre à un Admin/Manager de consulter l'historique de présence d'un employé ou d'une équipe sur une période donnée.
 - **EF-ATT-06** : Le système doit permettre la correction manuelle d'un pointage par un Admin (cas d'oubli de scan), avec traçabilité de la modification.
 - **EF-ATT-07** *(nouveau)* : Le système doit maintenir un horaire de référence entreprise configurable par l'Admin RH, comprenant : heure de début et fin du matin, heure de début et fin de l'après-midi, tolérance de retard/départ anticipé en minutes. Horaire initial : **08h30–13h00 / 14h00–17h00, tolérance 10 minutes**. Toute modification de cet horaire est historisée (date d'effet) et ne s'applique qu'aux pointages **futurs** ; les pointages passés restent évalués selon l'horaire en vigueur au moment du scan.
+- **EF-ATT-08** *(nouveau)* : Le système doit permettre à l'Admin RH de définir, par employé, un planning de télétravail hybride : les jours de la semaine travaillés à distance, sur une période donnée (date de début, date de fin optionnelle). Un employé peut avoir plusieurs plannings successifs ; les plannings antérieurs sont conservés et restent consultables.
+- **EF-ATT-09** *(nouveau)* : La détection d'anomalies de pointage (cf. EF-ATT-04) doit consulter le planning de télétravail avant de conclure : aucune anomalie n'est générée pour un jour couvert par un planning de télétravail actif, l'absence de pointage étant dans ce cas le comportement attendu.
+- **EF-ATT-10** *(nouveau)* : Le planning de télétravail doit être consultable depuis la fiche employé. Les jours télétravaillés doivent être distingués des absences dans l'historique de présence (cf. EF-ATT-05) et dans les exports de feuilles de présence (cf. EF-EXP).
 
 ### 2.5 Recrutement (EF-REC)
 
@@ -213,6 +216,7 @@ Module transverse assurant, pour chaque notification métier déjà définie (EF
 - Le fuseau horaire et l'horodatage doivent être cohérents indépendamment du poste utilisé pour le scan (le serveur fait foi).
 - Un scan effectué pour un employé désactivé doit être rejeté.
 - **Horaire de référence — règle confirmée** : horaire unique pour toute l'entreprise (pas de variation par département/employé), 08h30–13h00 / 14h00–17h00, tolérance de 10 minutes au check-in (max 08h40) et au check-out (min 16h50). Aucun pointage pour la pause de midi — la pause de 1h est déduite automatiquement du calcul de présence (cf. EF-ATT-03). L'horaire est modifiable par l'Admin RH et historisé : tout changement ne s'applique qu'aux pointages futurs, les pointages passés restant évalués selon l'horaire en vigueur à leur date.
+- **Télétravail hybride — règle confirmée** *(nouveau)* : un jour couvert par un planning de télétravail actif n'attend aucun pointage ; l'absence de scan ce jour-là ne génère donc aucune anomalie (cf. EF-ATT-09). Un pointage effectué malgré tout un jour télétravaillé reste enregistré et valide. Le planning ne modifie ni le calcul du temps de présence des jours travaillés sur site, ni le solde de congés.
 
 ### 3.3 Recrutement
 
@@ -291,6 +295,7 @@ Module transverse assurant, pour chaque notification métier déjà définie (EF
 - EF-EMP-12, 13 — recherche texte libre employés, notification Manager à l'embauche
 - EF-EMP-15, 16 — date de fin de contrat prévue pour les CDD, distinguée de la date de départ effective
 - EF-ATT-04, 05 — détection d'anomalies (retard, départ anticipé, incomplet), consultation d'historique
+- EF-ATT-08, 09, 10 — télétravail hybride : planning par employé, neutralisation des anomalies, distinction dans l'historique et les exports
 - EF-REC-03, 04, 05, 08, 09, 11, 12, 13, 14 — normalisation multi-source, analyse IA + mots-clés, dégradation gracieuse, réactivation "En attente", auto-création de fiche employé, notification de rejet candidat
 - EF-ADM-04, 06, 09, 10 — bons de sortie, historique filtrable, envoi de document libre, calendrier des jours fériés
 - EF-DASH-05 — bandeau de délégation active sur le tableau de bord Admin
