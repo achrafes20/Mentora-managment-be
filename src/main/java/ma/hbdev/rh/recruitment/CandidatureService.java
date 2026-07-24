@@ -8,11 +8,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import ma.hbdev.rh.auth.DelegationService;
-import ma.hbdev.rh.shared.config.ConfigurationService;
 import ma.hbdev.rh.shared.file.FichierUploade;
 import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.security.CurrentUser;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -53,29 +53,31 @@ class CandidatureService {
   private final CandidatureRepository candidatureRepository;
   private final EntretienRepository entretienRepository;
   private final EnvoiDocumentRepository envoiDocumentRepository;
-  private final ConfigurationService configurationService;
   private final MailService mailService;
   private final FileStorageService fileStorageService;
   private final ApplicationEventPublisher evenements;
   private final DelegationService delegationService;
 
+  // EF-REC-12 : constante technique fixée au déploiement (cf. décision T4.B2 du 2026-07-24).
+  private final int fenetreRetentionMois;
+
   CandidatureService(
       CandidatureRepository candidatureRepository,
       EntretienRepository entretienRepository,
       EnvoiDocumentRepository envoiDocumentRepository,
-      ConfigurationService configurationService,
       MailService mailService,
       FileStorageService fileStorageService,
       ApplicationEventPublisher evenements,
-      DelegationService delegationService) {
+      DelegationService delegationService,
+      @Value("${app.recruitment.reactivation.fenetre-mois:6}") int fenetreRetentionMois) {
     this.candidatureRepository = candidatureRepository;
     this.entretienRepository = entretienRepository;
     this.envoiDocumentRepository = envoiDocumentRepository;
-    this.configurationService = configurationService;
     this.mailService = mailService;
     this.fileStorageService = fileStorageService;
     this.evenements = evenements;
     this.delegationService = delegationService;
+    this.fenetreRetentionMois = fenetreRetentionMois;
   }
 
   @Transactional(readOnly = true)
@@ -203,8 +205,7 @@ class CandidatureService {
 
   // EF-REC-12 (fenêtre de rétention dépassée) : n8n cron ping, cf. n8n/README.md.
   int archiverExpirees() {
-    int fenetreMois = configurationService.getInteger("fenetre_retention_candidature_mois", 6);
-    Instant seuil = Instant.now().minus(fenetreMois * 30L, ChronoUnit.DAYS);
+    Instant seuil = Instant.now().minus(fenetreRetentionMois * 30L, ChronoUnit.DAYS);
     List<Candidature> expirees =
         candidatureRepository.findByStatutAndDateIngestionBefore(
             StatutCandidature.en_attente, seuil);

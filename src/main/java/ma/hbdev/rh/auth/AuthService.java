@@ -4,9 +4,10 @@ import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import ma.hbdev.rh.shared.config.ConfigurationService;
 import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.security.JwtService;
+import ma.hbdev.rh.shared.security.PasswordPolicy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +34,17 @@ public class AuthService {
   private final PasswordResetRepository passwordResetRepository;
   private final JwtService jwtService;
   private final PasswordEncoder passwordEncoder;
-  private final ConfigurationService configurationService;
+  private final PasswordPolicy passwordPolicy;
   private final MailService mailService;
+
+  // NFR-SEC-08/EF-AUTH-09 : constantes techniques fixées au déploiement (application.yml,
+  // surchargeables par variable d'environnement) — jamais admin-éditables en libre-service (cf.
+  // décision T4.B2 du 2026-07-24, avancement-projet.md).
+  @Value("${app.security.lockout.max-attempts:5}")
+  private int tentativesMax;
+
+  @Value("${app.security.lockout.delay-minutes:30}")
+  private int delaiDeverrouillageMinutes;
 
   /**
    * EF-AUTH-01 : Authentifie un utilisateur et retourne un JWT. EF-AUTH-02/03/04 : Gère le
@@ -167,7 +177,7 @@ public class AuthService {
     User user = reset.getUser();
 
     // Validation de la politique de mot de passe
-    if (!configurationService.validatePasswordStrength(request.nouveauMotDePasse())) {
+    if (!passwordPolicy.valide(request.nouveauMotDePasse())) {
       throw new AuthException(
           "Le nouveau mot de passe ne respecte pas la politique de sécurité "
               + "(min. 10 caractères, majuscule, minuscule, chiffre).");
@@ -198,17 +208,14 @@ public class AuthService {
   // ---------- méthodes privées ----------
 
   private void handleFailedAttempt(User user) {
-    int maxAttempts = configurationService.getTentativesMax();
-    int delayMinutes = configurationService.getDelaiDeverrouillageMinutes();
-
     int attempts = user.getTentativesEchoueesConsecutives() + 1;
     user.setTentativesEchoueesConsecutives(attempts);
 
-    if (attempts >= maxAttempts) {
-      user.setVerrouilleJusquA(Instant.now().plusSeconds((long) delayMinutes * 60));
+    if (attempts >= tentativesMax) {
+      user.setVerrouilleJusquA(Instant.now().plusSeconds((long) delaiDeverrouillageMinutes * 60));
       log.warn("Compte verrouillé après {} tentatives : {}", attempts, user.getEmail());
     } else {
-      log.warn("Tentative échouée {}/{} pour : {}", attempts, maxAttempts, user.getEmail());
+      log.warn("Tentative échouée {}/{} pour : {}", attempts, tentativesMax, user.getEmail());
     }
     user.setModifieLe(Instant.now());
     userRepository.save(user);

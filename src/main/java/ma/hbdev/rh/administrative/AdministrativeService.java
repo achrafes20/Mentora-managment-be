@@ -4,9 +4,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import ma.hbdev.rh.auth.DelegationService;
 import ma.hbdev.rh.shared.security.CurrentUser;
@@ -23,11 +25,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class AdministrativeService {
 
-  private static final BigDecimal ACQUISITION_MENSUELLE = new BigDecimal("1.5");
+  // EF-ADM-11 : types de contrat valides (miroir léger du type Postgres type_contrat_employe,
+  // sans dépendre du enum package-private employee.TypeContratEmploye — même principe que
+  // employe(), déjà lu en String brut ici plutôt que via une dépendance croisée de module).
+  private static final Set<String> TYPES_CONTRAT_CONNUS =
+      Set.of("CDI", "CDD", "STAGIAIRE", "STAGIAIRE_REMUNERE");
 
   private final DemandeAdministrativeRepository demandeRepository;
   private final MouvementCongeAdmRepository mouvementRepository;
   private final JourFerieRepository jourFerieRepository;
+  private final PeriodeBlocageCongesRepository periodeBlocageRepository;
   private final JdbcTemplate jdbcTemplate;
   private final ApplicationEventPublisher evenements;
   private final DelegationService delegationService;
@@ -36,12 +43,14 @@ class AdministrativeService {
       DemandeAdministrativeRepository demandeRepository,
       MouvementCongeAdmRepository mouvementRepository,
       JourFerieRepository jourFerieRepository,
+      PeriodeBlocageCongesRepository periodeBlocageRepository,
       JdbcTemplate jdbcTemplate,
       ApplicationEventPublisher evenements,
       DelegationService delegationService) {
     this.demandeRepository = demandeRepository;
     this.mouvementRepository = mouvementRepository;
     this.jourFerieRepository = jourFerieRepository;
+    this.periodeBlocageRepository = periodeBlocageRepository;
     this.jdbcTemplate = jdbcTemplate;
     this.evenements = evenements;
     this.delegationService = delegationService;
@@ -213,6 +222,78 @@ class AdministrativeService {
     jourFerieRepository.deleteById(id);
   }
 
+  @Transactional(readOnly = true)
+  java.util.List<PeriodeBlocageCongesReponse> periodesBlocageConges() {
+    return periodeBlocageRepository.findAllByOrderByDateDebutDesc().stream()
+        .map(PeriodeBlocageCongesReponse::depuis)
+        .toList();
+  }
+
+  PeriodeBlocageCongesReponse creerPeriodeBlocageConges(PeriodeBlocageCongesRequete requete) {
+    verifierAdmin();
+    if (requete.dateFin().isBefore(requete.dateDebut())) {
+      throw new IllegalArgumentException("La date de fin doit etre apres la date de debut");
+    }
+    PeriodeBlocageConges periode =
+        periodeBlocageRepository.save(
+            new PeriodeBlocageConges(
+                requete.dateDebut(), requete.dateFin(), requete.libelle(), utilisateurCourant()));
+    evenements.publishEvent(new PeriodeBlocageCongesEvent(periode.getId(), "creation"));
+    return PeriodeBlocageCongesReponse.depuis(periode);
+  }
+
+  void supprimerPeriodeBlocageConges(UUID id) {
+    verifierAdmin();
+    periodeBlocageRepository.deleteById(id);
+    evenements.publishEvent(new PeriodeBlocageCongesEvent(id, "suppression"));
+  }
+
+  @Transactional(readOnly = true)
+  List<PolitiqueCongeReponse> politiqueConges() {
+    return jdbcTemplate.query(
+        """
+        select type_contrat::text, jours_par_mois, modifie_par, modifie_le
+          from politique_conges
+         order by type_contrat
+        """,
+        (rs, rowNum) ->
+            new PolitiqueCongeReponse(
+                rs.getString("type_contrat"),
+                rs.getBigDecimal("jours_par_mois"),
+                rs.getObject("modifie_par", UUID.class),
+                // pgjdbc ne convertit pas timestamptz -> java.time.Instant directement via
+                // getObject(col, Class) (seul OffsetDateTime/LocalDateTime le sont).
+                rs.getObject("modifie_le", OffsetDateTime.class).toInstant()));
+  }
+
+  PolitiqueCongeReponse modifierPolitiqueConge(String typeContrat, BigDecimal joursParMois) {
+    verifierAdmin();
+    if (!TYPES_CONTRAT_CONNUS.contains(typeContrat)) {
+      throw new IllegalArgumentException("Type de contrat inconnu : " + typeContrat);
+    }
+    jdbcTemplate.update(
+        """
+        update politique_conges
+           set jours_par_mois = ?, modifie_par = ?, modifie_le = now()
+         where type_contrat = cast(? as type_contrat_employe)
+        """,
+        joursParMois,
+        utilisateurCourant(),
+        typeContrat);
+    evenements.publishEvent(new PolitiqueCongeModifieeEvent(typeContrat));
+    return politiqueConges().stream()
+        .filter(p -> p.typeContrat().equals(typeContrat))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private BigDecimal tauxAcquisitionMensuel(String typeContrat) {
+    return jdbcTemplate.query(
+        "select jours_par_mois from politique_conges where type_contrat = cast(? as type_contrat_employe)",
+        rs -> rs.next() ? rs.getBigDecimal("jours_par_mois") : BigDecimal.ZERO,
+        typeContrat);
+  }
+
   private void valider(DemandeAdministrativeRequete requete, EmployeInfo employe) {
     if (!"actif".equals(employe.statut())) {
       throw new IllegalArgumentException("L'employe doit etre actif");
@@ -270,6 +351,13 @@ class AdministrativeService {
             requete.dateDebut())) {
       throw new IllegalArgumentException("Un conge approuve chevauche cette periode");
     }
+    // EF-ADM-12 : une demande déjà approuvée avant la création d'une période de blocage n'est
+    // jamais remise en cause (ce contrôle ne s'applique qu'à la création, pas à la lecture/decision
+    // d'une demande existante).
+    if (periodeBlocageRepository.chevaucheUnePeriodeBloquee(requete.dateDebut(), fin)) {
+      throw new IllegalArgumentException(
+          "Cette periode chevauche une periode de blocage des demandes de conge");
+    }
   }
 
   private BigDecimal solde(EmployeInfo employe) {
@@ -280,9 +368,11 @@ class AdministrativeService {
   }
 
   private BigDecimal acquis(EmployeInfo employe) {
-    if (employe.dateEmbauche() == null
-        || employe.typeContrat() == null
-        || employe.typeContrat().startsWith("STAGIAIRE")) {
+    if (employe.dateEmbauche() == null || employe.typeContrat() == null) {
+      return BigDecimal.ZERO;
+    }
+    BigDecimal tauxMensuel = tauxAcquisitionMensuel(employe.typeContrat());
+    if (tauxMensuel.compareTo(BigDecimal.ZERO) == 0) {
       return BigDecimal.ZERO;
     }
     long totalMois =
@@ -291,7 +381,7 @@ class AdministrativeService {
                 ChronoUnit.MONTHS.between(
                     employe.dateEmbauche().withDayOfMonth(1), LocalDate.now().withDayOfMonth(1)))
             + 1;
-    return ACQUISITION_MENSUELLE.multiply(BigDecimal.valueOf(totalMois));
+    return tauxMensuel.multiply(BigDecimal.valueOf(totalMois));
   }
 
   private BigDecimal duree(DemandeAdministrative demande) {

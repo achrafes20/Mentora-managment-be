@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -93,5 +94,38 @@ class AdministrativeController {
   ApiResponse<Void> supprimerJourFerie(@PathVariable UUID id) {
     service.supprimerJourFerie(id);
     return ApiResponse.ok();
+  }
+
+  // EF-ADM-12 : gestion réservée Admin (comme les jours fériés), jamais délégable.
+  @GetMapping("/periodes-blocage-conges")
+  ApiResponse<List<PeriodeBlocageCongesReponse>> periodesBlocageConges() {
+    return ApiResponse.ok(service.periodesBlocageConges());
+  }
+
+  @PostMapping("/periodes-blocage-conges")
+  @PreAuthorize("hasRole('ADMIN')")
+  ApiResponse<PeriodeBlocageCongesReponse> creerPeriodeBlocageConges(
+      @Valid @RequestBody PeriodeBlocageCongesRequete requete) {
+    return ApiResponse.ok(service.creerPeriodeBlocageConges(requete));
+  }
+
+  @DeleteMapping("/periodes-blocage-conges/{id}")
+  @PreAuthorize("hasRole('ADMIN')")
+  ApiResponse<Void> supprimerPeriodeBlocageConges(@PathVariable UUID id) {
+    service.supprimerPeriodeBlocageConges(id);
+    return ApiResponse.ok();
+  }
+
+  // EF-ADM-11 : gestion réservée Admin, jamais délégable.
+  @GetMapping("/politique-conges")
+  ApiResponse<List<PolitiqueCongeReponse>> politiqueConges() {
+    return ApiResponse.ok(service.politiqueConges());
+  }
+
+  @PutMapping("/politique-conges/{typeContrat}")
+  @PreAuthorize("hasRole('ADMIN')")
+  ApiResponse<PolitiqueCongeReponse> modifierPolitiqueConge(
+      @PathVariable String typeContrat, @Valid @RequestBody PolitiqueCongeRequete requete) {
+    return ApiResponse.ok(service.modifierPolitiqueConge(typeContrat, requete.joursParMois()));
   }
 }

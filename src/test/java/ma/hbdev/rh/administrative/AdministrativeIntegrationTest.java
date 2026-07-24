@@ -3,9 +3,11 @@ package ma.hbdev.rh.administrative;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -72,10 +74,23 @@ class AdministrativeIntegrationTest {
     jdbcTemplate.execute(
         """
         truncate table notifications_mattermost, notifications_in_app, journal_audit,
-          mouvements_conges, demandes_administratives, jours_feries, employes,
-          departements, sessions_utilisateur, utilisateurs
+          mouvements_conges, demandes_administratives, jours_feries, periodes_blocage_conges,
+          employes, departements, sessions_utilisateur
         cascade
         """);
+    // politique_conges (EF-ADM-11) est une donnée de référence seedée par V11, jamais recréée par
+    // ce test — on ne la TRUNCATE jamais (un TRUNCATE ... utilisateurs CASCADE l'emporterait
+    // silencieusement, même piège que configuration_parametres en T4.B2). modifie_par y référence
+    // utilisateurs(id) sans ON DELETE : nettoyer la référence avant de recréer les comptes de test.
+    // Valeurs remises aux défauts V11 à chaque test : un test qui modifie CDI ne doit pas fausser
+    // un autre test exécuté ensuite (JUnit ne garantit pas l'ordre des méthodes).
+    jdbcTemplate.update("UPDATE politique_conges SET modifie_par = NULL");
+    jdbcTemplate.update(
+        "UPDATE politique_conges SET jours_par_mois = 1.5 WHERE type_contrat IN ('CDI', 'CDD')");
+    jdbcTemplate.update(
+        "UPDATE politique_conges SET jours_par_mois = 0 WHERE type_contrat IN"
+            + " ('STAGIAIRE', 'STAGIAIRE_REMUNERE')");
+    jdbcTemplate.execute("DELETE FROM utilisateurs");
 
     String suffixe = UUID.randomUUID().toString();
     User admin = utilisateur("admin-" + suffixe + "@test.ma", RoleUtilisateur.admin);
@@ -240,6 +255,158 @@ class AdministrativeIntegrationTest {
                         .formatted(employeId, ferie, ferie.plusDays(1))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.dureeJours").value(1));
+  }
+
+  @Test
+  void refuseUneDemandeDeCongeChevauchantUnePeriodeDeBlocage() throws Exception {
+    LocalDate debut = prochainLundiAuMoins(15);
+    LocalDate fin = debut.plusDays(4);
+
+    String periodeId =
+        objectMapper
+            .readTree(
+                mockMvc
+                    .perform(
+                        post("/api/demandes-administratives/periodes-blocage-conges")
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(
+                                """
+                                {"dateDebut":"%s","dateFin":"%s","libelle":"Cloture annuelle"}
+                                """
+                                    .formatted(debut, fin)))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .at("/data/id")
+            .asText();
+
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/periodes-blocage-conges")
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].libelle").value("Cloture annuelle"));
+
+    // Chevauchement partiel (un seul jour en commun avec [debut, fin]) : doit suffire à bloquer.
+    LocalDate demandeDebut = fin.minusDays(1);
+    LocalDate demandeFin = fin.plusDays(2);
+    mockMvc
+        .perform(
+            post("/api/demandes-administratives")
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"employeId":"%s","typeDemande":"conge","granularite":"journee",
+                     "dateDebut":"%s","dateFin":"%s","motif":"Repos"}
+                    """
+                        .formatted(employeId, demandeDebut, demandeFin)))
+        .andExpect(status().isBadRequest());
+
+    mockMvc
+        .perform(
+            delete("/api/demandes-administratives/periodes-blocage-conges/{id}", periodeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/demandes-administratives")
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"employeId":"%s","typeDemande":"conge","granularite":"journee",
+                     "dateDebut":"%s","dateFin":"%s","motif":"Repos"}
+                    """
+                        .formatted(employeId, demandeDebut, demandeFin)))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void refuseAuManagerDeCreerOuSupprimerUnePeriodeDeBlocage() throws Exception {
+    LocalDate debut = prochainLundiAuMoins(20);
+    mockMvc
+        .perform(
+            post("/api/demandes-administratives/periodes-blocage-conges")
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"dateDebut":"%s","dateFin":"%s","libelle":"Test"}
+                    """
+                        .formatted(debut, debut.plusDays(1))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void listeLaPolitiqueDeCongesSeedeeParDefaut() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/politique-conges")
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[?(@.typeContrat == 'CDI')].joursParMois").value(1.5))
+        .andExpect(jsonPath("$.data[?(@.typeContrat == 'STAGIAIRE')].joursParMois").value(0.0));
+  }
+
+  @Test
+  void modifieLeTauxEtLAppliqueAuCalculDuSolde() throws Exception {
+    mockMvc
+        .perform(
+            put("/api/demandes-administratives/politique-conges/CDI")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"joursParMois\": 2.0}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.joursParMois").value(2.0))
+        .andExpect(jsonPath("$.data.modifiePar").isNotEmpty());
+
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/politique-conges")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[?(@.typeContrat == 'CDI')].joursParMois").value(2.0));
+
+    // employeId (CDI, embauche il y a 10 mois, cf. preparerDonnees) a un solde initial de 5 jours
+    // (mouvement d'initialisation) — a 2.0 j/mois sur 11 mois d'anciennete (mois d'embauche
+    // inclus), l'acquis doit refleter le nouveau taux plutot que l'ancien (1.5) : 22 + 5 = 27.
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/employes/{id}/solde", employeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.soldeJours").value(27.0));
+  }
+
+  @Test
+  void refuseUnTauxNegatifUnTypeInconnuEtLAccesManager() throws Exception {
+    mockMvc
+        .perform(
+            put("/api/demandes-administratives/politique-conges/CDI")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"joursParMois\": -1}"))
+        .andExpect(status().isBadRequest());
+
+    mockMvc
+        .perform(
+            put("/api/demandes-administratives/politique-conges/INTERIMAIRE")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"joursParMois\": 1.0}"))
+        .andExpect(status().isBadRequest());
+
+    mockMvc
+        .perform(
+            put("/api/demandes-administratives/politique-conges/CDI")
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"joursParMois\": 1.0}"))
+        .andExpect(status().isForbidden());
   }
 
   /** Premier lundi a au moins {@code joursMinimum} jours de calendrier a partir d'aujourd'hui. */

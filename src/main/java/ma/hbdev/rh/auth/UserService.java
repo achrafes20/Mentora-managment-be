@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import ma.hbdev.rh.shared.config.ConfigurationService;
+import ma.hbdev.rh.shared.security.PasswordPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +29,7 @@ public class UserService {
   private final UserRepository userRepository;
   private final SessionRepository sessionRepository;
   private final PasswordEncoder passwordEncoder;
-  private final ConfigurationService configurationService;
+  private final PasswordPolicy passwordPolicy;
 
   /** Retourne tous les utilisateurs (admin uniquement). */
   @Transactional(readOnly = true)
@@ -69,7 +69,7 @@ public class UserService {
       throw new IllegalArgumentException("Un compte avec cet e-mail existe déjà.");
     }
 
-    if (!configurationService.validatePasswordStrength(request.motDePasse())) {
+    if (!passwordPolicy.valide(request.motDePasse())) {
       throw new IllegalArgumentException(
           "Le mot de passe ne respecte pas la politique de sécurité "
               + "(min. 10 caractères, majuscule, minuscule, chiffre).");

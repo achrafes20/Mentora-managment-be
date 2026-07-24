@@ -8,8 +8,10 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.security.CurrentUser;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,16 +32,25 @@ public class PointageService {
   private final QrCodeService qrCodeService;
   private final HoraireReferenceService horaireReferenceService;
   private final AnomaliePointageRepository anomalieRepository;
+  private final PolitiqueAnomaliesRepository politiqueAnomaliesRepository;
+  private final ApplicationEventPublisher evenements;
+  private final JdbcTemplate jdbcTemplate;
 
   PointageService(
       PointageRepository pointageRepository,
       QrCodeService qrCodeService,
       HoraireReferenceService horaireReferenceService,
-      AnomaliePointageRepository anomalieRepository) {
+      AnomaliePointageRepository anomalieRepository,
+      PolitiqueAnomaliesRepository politiqueAnomaliesRepository,
+      ApplicationEventPublisher evenements,
+      JdbcTemplate jdbcTemplate) {
     this.pointageRepository = pointageRepository;
     this.qrCodeService = qrCodeService;
     this.horaireReferenceService = horaireReferenceService;
     this.anomalieRepository = anomalieRepository;
+    this.politiqueAnomaliesRepository = politiqueAnomaliesRepository;
+    this.evenements = evenements;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   /**
@@ -132,8 +143,60 @@ public class PointageService {
         employeId, date, type)) {
       anomalieRepository.save(
           new AnomaliePointage(employeId, date, type, pointageEntreeId, pointageSortieId));
+      verifierSeuilAnomalies(employeId);
     }
   }
+
+  /**
+   * EF-ATT-11 : escalade sur récurrence — vérifiée après chaque nouvelle anomalie (pas seulement
+   * détectée, réellement insérée : l'idempotence ci-dessus évite de re-vérifier pour un doublon).
+   */
+  private void verifierSeuilAnomalies(UUID employeId) {
+    PolitiqueAnomalies politique =
+        politiqueAnomaliesRepository.findAll().stream().findFirst().orElse(null);
+    if (politique == null) {
+      return;
+    }
+    LocalDate depuis = LocalDate.now(ZONE).minusDays(politique.getPeriodeJours());
+    long nombreAnomalies =
+        anomalieRepository.countByEmployeIdAndResolueFalseAndDatePointageGreaterThanEqual(
+            employeId, depuis);
+    if (nombreAnomalies != politique.getSeuilAnomalies()) {
+      // Notifie une seule fois au moment où le seuil est franchi, pas à chaque anomalie
+      // supplémentaire au-delà (sinon une spirale d'alertes répétées pour le même employé).
+      return;
+    }
+    EmployeInfoPresence employe = employeInfo(employeId);
+    if (employe == null) {
+      return;
+    }
+    evenements.publishEvent(
+        new SeuilAnomaliesDepasseEvent(
+            employeId,
+            employe.nomComplet(),
+            employe.managerId(),
+            (int) nombreAnomalies,
+            politique.getSeuilAnomalies()));
+  }
+
+  private EmployeInfoPresence employeInfo(UUID employeId) {
+    List<EmployeInfoPresence> resultats =
+        jdbcTemplate.query(
+            """
+            select e.nom, e.prenom, d.manager_id
+              from employes e
+              left join departements d on d.id = e.departement_id
+             where e.id = ?
+            """,
+            (rs, rowNum) ->
+                new EmployeInfoPresence(
+                    rs.getString("prenom") + " " + rs.getString("nom"),
+                    (UUID) rs.getObject("manager_id")),
+            employeId);
+    return resultats.isEmpty() ? null : resultats.get(0);
+  }
+
+  private record EmployeInfoPresence(String nomComplet, UUID managerId) {}
 
   /**
    * Calcule la durée de présence effective pour un employé sur une journée (EF-ATT-03). Déduit
