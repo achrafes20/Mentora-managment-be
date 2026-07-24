@@ -21,4 +21,8 @@ interface AnomaliePointageRepository extends JpaRepository<AnomaliePointage, UUI
       UUID employeId, LocalDate datePointage, TypeAnomaliePointage typeAnomalie);
 
   List<AnomaliePointage> findByEmployeIdOrderByCreeLeDesc(UUID employeId);
+
+  /** EF-ATT-11 : compte des anomalies non résolues d'un employé depuis une date donnée. */
+  long countByEmployeIdAndResolueFalseAndDatePointageGreaterThanEqual(
+      UUID employeId, LocalDate depuis);
 }

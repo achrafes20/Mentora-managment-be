@@ -15,8 +15,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import ma.hbdev.rh.auth.Session;
 import ma.hbdev.rh.auth.SessionRepository;
-import ma.hbdev.rh.shared.config.ConfigurationService;
 import ma.hbdev.rh.shared.web.ApiResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -34,8 +34,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private final JwtService jwtService;
   private final SessionRepository sessionRepository;
-  private final ConfigurationService configurationService;
   private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
+  // EF-AUTH-10 : constante technique fixée au déploiement (cf. décision T4.B2 du 2026-07-24).
+  @Value("${app.security.session-inactivite-minutes:30}")
+  private int dureeSessionInactiviteMinutes;
 
   @Override
   protected void doFilterInternal(
@@ -72,9 +75,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       }
 
       // Validation de l'inactivité (EF-AUTH-10)
-      int inactivityLimitMinutes = configurationService.getDureeSessionInactiviteMinutes();
       Instant lastActivity = session.getDerniereActiviteLe();
-      if (Duration.between(lastActivity, Instant.now()).toMinutes() >= inactivityLimitMinutes) {
+      if (Duration.between(lastActivity, Instant.now()).toMinutes()
+          >= dureeSessionInactiviteMinutes) {
         session.setRevoqueLe(Instant.now());
         sessionRepository.save(session);
         writeErrorResponse(response, "Session expirée pour inactivité", HttpStatus.UNAUTHORIZED);

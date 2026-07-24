@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 import ma.hbdev.rh.shared.event.EvenementMetier;
 import ma.hbdev.rh.shared.event.ModuleAudit;
 import org.hibernate.annotations.JdbcType;
@@ -20,6 +21,7 @@ import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "journal_audit")
+@Getter
 class JournalAudit {
 
   @Id

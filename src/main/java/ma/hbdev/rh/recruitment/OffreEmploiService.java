@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import ma.hbdev.rh.shared.config.ConfigurationService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,21 +18,26 @@ class OffreEmploiService {
 
   private final OffreEmploiRepository offreEmploiRepository;
   private final CandidatureRepository candidatureRepository;
-  private final ConfigurationService configurationService;
   private final ApplicationEventPublisher evenements;
   private final ObjectMapper objectMapper;
+
+  // EF-REC-12 : constantes techniques fixées au déploiement (cf. décision T4.B2 du 2026-07-24).
+  private final int seuilReactivation;
+  private final int fenetreRetentionMois;
 
   OffreEmploiService(
       OffreEmploiRepository offreEmploiRepository,
       CandidatureRepository candidatureRepository,
-      ConfigurationService configurationService,
       ApplicationEventPublisher evenements,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      @Value("${app.recruitment.reactivation.seuil-score:70}") int seuilReactivation,
+      @Value("${app.recruitment.reactivation.fenetre-mois:6}") int fenetreRetentionMois) {
     this.offreEmploiRepository = offreEmploiRepository;
     this.candidatureRepository = candidatureRepository;
-    this.configurationService = configurationService;
     this.evenements = evenements;
     this.objectMapper = objectMapper;
+    this.seuilReactivation = seuilReactivation;
+    this.fenetreRetentionMois = fenetreRetentionMois;
   }
 
   @Transactional(readOnly = true)
@@ -95,9 +100,7 @@ class OffreEmploiService {
     if (motsClesOffre.isEmpty()) {
       return;
     }
-    int seuil = configurationService.getInteger("seuil_score_reactivation_candidature", 70);
-    int fenetreMois = configurationService.getInteger("fenetre_retention_candidature_mois", 6);
-    Instant seuilRetention = Instant.now().minus(fenetreMois * 30L, ChronoUnit.DAYS);
+    Instant seuilRetention = Instant.now().minus(fenetreRetentionMois * 30L, ChronoUnit.DAYS);
 
     List<Candidature> enAttente =
         candidatureRepository.findByStatutAndDateIngestionAfter(
@@ -108,7 +111,7 @@ class OffreEmploiService {
       if (motsClesCandidat.isEmpty()) {
         continue;
       }
-      if (chevauchementPourcent(motsClesOffre, motsClesCandidat) >= seuil) {
+      if (chevauchementPourcent(motsClesOffre, motsClesCandidat) >= seuilReactivation) {
         candidature.changerStatut(StatutCandidature.suggestion_reactivation);
         candidature.assignerOffre(offre.getId());
       }

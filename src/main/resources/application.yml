@@ -65,6 +65,8 @@ app:
     read-timeout-ms: ${MATTERMOST_READ_TIMEOUT_MS:5000}
   notifications:
     archivage-cron: ${NOTIFICATIONS_ARCHIVAGE_CRON:0 15 2 * * *}
+    # EF-NOTIF-05 : rétention des notifications in-app avant archivage automatique.
+    retention-jours: ${NOTIFICATIONS_RETENTION_JOURS:90}
   delegations:
     expiration-cron: ${DELEGATIONS_EXPIRATION_CRON:0 30 2 * * *}
   cors:
@@ -78,9 +80,31 @@ app:
     gemini:
       api-key: ${GEMINI_API_KEY:}
       model: ${GEMINI_MODEL:gemini-2.0-flash}
-  # --- Auth machine-à-machine pour les endpoints appelés uniquement par n8n (EF-REC-02/12) ---
+  # --- Sécurité (NFR-SEC) : constantes techniques fixées au déploiement, jamais admin-éditables
+  # en libre-service (cf. décision T4.B2 du 2026-07-24, avancement-projet.md). ---
   security:
+    # Auth machine-à-machine pour les endpoints appelés uniquement par n8n (EF-REC-02/12).
     internal-webhook-secret: ${INTERNAL_WEBHOOK_SECRET:}
+    lockout:
+      max-attempts: ${SECURITY_LOCKOUT_MAX_ATTEMPTS:5}
+      delay-minutes: ${SECURITY_LOCKOUT_DELAY_MINUTES:30}
+    password-policy:
+      min-length: ${SECURITY_PASSWORD_MIN_LENGTH:10}
+      require-uppercase: ${SECURITY_PASSWORD_REQUIRE_UPPERCASE:true}
+      require-lowercase: ${SECURITY_PASSWORD_REQUIRE_LOWERCASE:true}
+      require-digit: ${SECURITY_PASSWORD_REQUIRE_DIGIT:true}
+    session-inactivite-minutes: ${SECURITY_SESSION_INACTIVITE_MINUTES:30}
+  # --- Recrutement (EF-REC-12) : suggestion de réactivation des candidatures "En attente". ---
+  recruitment:
+    reactivation:
+      seuil-score: ${RECRUITMENT_REACTIVATION_SEUIL_SCORE:70}
+      fenetre-mois: ${RECRUITMENT_REACTIVATION_FENETRE_MOIS:6}
+  # --- Documents RH (EF-DOC-02/13/14) : surveillance planifiée, pas encore consommé par le code
+  # (module document/T4.A1 pas encore implémenté) — valeurs prêtes pour quand il le sera. ---
+  documents:
+    delai-notification-fin-stage-jours: ${DOCUMENTS_DELAI_FIN_STAGE_JOURS:3}
+    delai-notification-fin-cdd-jours: ${DOCUMENTS_DELAI_FIN_CDD_JOURS:15}
+    delai-relance-fin-cdd-jours: ${DOCUMENTS_DELAI_RELANCE_FIN_CDD_JOURS:3}
 
 # --- Serveur ---
 server:
