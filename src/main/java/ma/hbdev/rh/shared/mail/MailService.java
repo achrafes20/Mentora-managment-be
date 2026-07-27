@@ -5,7 +5,6 @@ import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -17,16 +16,11 @@ public class MailService {
 
   public MailService(
       @Value("${app.n8n.webhook-url:http://n8n:5678/webhook/notify-email}") String webhookUrl) {
-    // Sans timeout explicite, un webhook n8n bloqué (ou juste pas encore démarré) fait pendre
-    // indéfiniment l'appel HTTP — le try/catch ci-dessous ne protège que contre une exception, pas
-    // contre un appel qui ne revient jamais. Bug réel trouvé en testant EF-REC-14 en conditions
-    // réelles : la transaction restait "idle in transaction" en base, bloquant toute tentative
-    // suivante sur la même candidature.
-    SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-    requestFactory.setConnectTimeout(Duration.ofSeconds(5));
-    requestFactory.setReadTimeout(Duration.ofSeconds(10));
     this.restClient =
-        RestClient.builder().baseUrl(webhookUrl).requestFactory(requestFactory).build();
+        RestClientFactory.buildWithTimeouts(
+            RestClient.builder().baseUrl(webhookUrl),
+            Duration.ofSeconds(5),
+            Duration.ofSeconds(10));
   }
 
   public void sendEmail(String to, String subject, String message) {
