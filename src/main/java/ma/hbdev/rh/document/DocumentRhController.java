@@ -25,7 +25,7 @@ class DocumentRhController {
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
 
   DocumentRhController(
-      DocumentRhService documentRhService, 
+      DocumentRhService documentRhService,
       EnvoiDocumentRhRepository envoiDocumentRepository,
       NotificationPlanifieeRepository notificationPlanifieeRepository) {
     this.documentRhService = documentRhService;
@@ -44,13 +44,13 @@ class DocumentRhController {
 
   @GetMapping("/surveillance")
   ApiResponse<List<NotificationPlanifieeReponse>> listerSurveillance() {
-    List<NotificationPlanifieeReponse> notifs = notificationPlanifieeRepository
-        .findByStatutAndDateEcheanceLessThanEqual(
-            StatutNotificationPlanifiee.planifiee,
-            java.time.LocalDate.now().plusDays(30))
-        .stream()
-        .map(NotificationPlanifieeReponse::depuis)
-        .toList();
+    List<NotificationPlanifieeReponse> notifs =
+        notificationPlanifieeRepository
+            .findByStatutAndDateEcheanceLessThanEqual(
+                StatutNotificationPlanifiee.planifiee, java.time.LocalDate.now().plusDays(30))
+            .stream()
+            .map(NotificationPlanifieeReponse::depuis)
+            .toList();
     return ApiResponse.ok(notifs);
   }
 
@@ -91,6 +91,3 @@ class DocumentRhController {
     return ApiResponse.ok(EnvoiDocumentResponse.depuis(envoi));
   }
 }
-
-
-

@@ -4,14 +4,14 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import ma.hbdev.rh.employee.EmployeModifieEvent;
 import ma.hbdev.rh.employee.EmployeReponse;
 import ma.hbdev.rh.employee.EmployeService;
-import ma.hbdev.rh.employee.EmployeModifieEvent;
 import ma.hbdev.rh.shared.mail.RestClientFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.context.event.EventListener;
 import org.springframework.web.client.RestClient;
 
 @Service
@@ -54,7 +54,8 @@ class SurveillancePlanifieeService {
     }
 
     String typeContrat = employe.typeContrat();
-    if (typeContrat == null || (!"CDD".equals(typeContrat) && !typeContrat.startsWith("STAGIAIRE"))) {
+    if (typeContrat == null
+        || (!"CDD".equals(typeContrat) && !typeContrat.startsWith("STAGIAIRE"))) {
       return; // CDI etc.
     }
 
@@ -64,52 +65,80 @@ class SurveillancePlanifieeService {
     }
 
     if (typeContrat.startsWith("STAGIAIRE")) {
-      creerNotification(employe.id(), TypeFinSurveillee.fin_stage, soustraireJoursOuvres(dateFin, 3));
+      creerNotification(
+          employe.id(), TypeFinSurveillee.fin_stage, soustraireJoursOuvres(dateFin, 3));
     } else if ("CDD".equals(typeContrat)) {
-      creerNotification(employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFin, 15));
+      creerNotification(
+          employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFin, 15));
       creerNotification(employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFin, 3));
     }
   }
 
   public void executerSurveillance() {
     LocalDate aujourdHui = LocalDate.now();
-    List<NotificationPlanifiee> aTraiter = notificationPlanifieeRepository
-        .findByStatutAndDateEcheanceLessThanEqual(StatutNotificationPlanifiee.planifiee, aujourdHui);
-        
+    List<NotificationPlanifiee> aTraiter =
+        notificationPlanifieeRepository.findByStatutAndDateEcheanceLessThanEqual(
+            StatutNotificationPlanifiee.planifiee, aujourdHui);
+
     for (NotificationPlanifiee notif : aTraiter) {
       try {
         EmployeReponse employe = employeService.recuperer(notif.getEmployeId());
         String sujet = "";
         String message = "";
-        
+
         if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_stage) {
           sujet = "Fin de stage proche : " + employe.prenom() + " " + employe.nom();
-          message = "Bonjour,\n\nLe stage de " + employe.prenom() + " " + employe.nom() + 
-                    " (poste: " + employe.poste() + ") se termine le " + employe.dateFinContratPrevue() + 
-                    " (J-3).\n\nVeuillez préparer le certificat de stage.\n\nCordialement,\nMentora RH";
+          message =
+              "Bonjour,\n\nLe stage de "
+                  + employe.prenom()
+                  + " "
+                  + employe.nom()
+                  + " (poste: "
+                  + employe.poste()
+                  + ") se termine le "
+                  + employe.dateFinContratPrevue()
+                  + " (J-3).\n\nVeuillez préparer le certificat de stage.\n\nCordialement,\nMentora RH";
           notif.marquerEnvoyee();
         } else if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_cdd) {
-          boolean dejaEnvoye = notificationPlanifieeRepository.existsByEmployeIdAndStatut(notif.getEmployeId(), StatutNotificationPlanifiee.envoyee)
-              || notificationPlanifieeRepository.existsByEmployeIdAndStatut(notif.getEmployeId(), StatutNotificationPlanifiee.relancee);
-              
+          boolean dejaEnvoye =
+              notificationPlanifieeRepository.existsByEmployeIdAndStatut(
+                      notif.getEmployeId(), StatutNotificationPlanifiee.envoyee)
+                  || notificationPlanifieeRepository.existsByEmployeIdAndStatut(
+                      notif.getEmployeId(), StatutNotificationPlanifiee.relancee);
+
           if (dejaEnvoye) {
             sujet = "RAPPEL : Fin de CDD proche : " + employe.prenom() + " " + employe.nom();
-            message = "Bonjour,\n\nCeci est un rappel : le CDD de " + employe.prenom() + " " + employe.nom() + 
-                      " (poste: " + employe.poste() + ") se termine le " + employe.dateFinContratPrevue() + 
-                      " (J-3).\n\nVeuillez préparer le certificat de travail.\n\nCordialement,\nMentora RH";
+            message =
+                "Bonjour,\n\nCeci est un rappel : le CDD de "
+                    + employe.prenom()
+                    + " "
+                    + employe.nom()
+                    + " (poste: "
+                    + employe.poste()
+                    + ") se termine le "
+                    + employe.dateFinContratPrevue()
+                    + " (J-3).\n\nVeuillez préparer le certificat de travail.\n\nCordialement,\nMentora RH";
             notif.marquerRelancee();
           } else {
             sujet = "Fin de CDD proche : " + employe.prenom() + " " + employe.nom();
-            message = "Bonjour,\n\nLe CDD de " + employe.prenom() + " " + employe.nom() + 
-                      " (poste: " + employe.poste() + ") se termine le " + employe.dateFinContratPrevue() + 
-                      " (J-15).\n\nVeuillez préparer le certificat de travail.\n\nCordialement,\nMentora RH";
+            message =
+                "Bonjour,\n\nLe CDD de "
+                    + employe.prenom()
+                    + " "
+                    + employe.nom()
+                    + " (poste: "
+                    + employe.poste()
+                    + ") se termine le "
+                    + employe.dateFinContratPrevue()
+                    + " (J-15).\n\nVeuillez préparer le certificat de travail.\n\nCordialement,\nMentora RH";
             notif.marquerEnvoyee();
           }
         }
-        
+
         envoyerEmailViaWebhook("admin@hbdev.ma", sujet, message);
       } catch (Exception e) {
-        System.err.println("Erreur de traitement de la notification " + notif.getId() + ": " + e.getMessage());
+        System.err.println(
+            "Erreur de traitement de la notification " + notif.getId() + ": " + e.getMessage());
       }
     }
     notificationPlanifieeRepository.saveAll(aTraiter);
@@ -118,7 +147,8 @@ class SurveillancePlanifieeService {
   private void envoyerEmailViaWebhook(String to, String subject, String message) {
     record N8nPayload(String to, String subject, String message) {}
     try {
-      restClient.post()
+      restClient
+          .post()
           .uri(webhookUrl)
           .body(new N8nPayload(to, subject, message))
           .retrieve()
@@ -129,8 +159,9 @@ class SurveillancePlanifieeService {
   }
 
   private void annulerNotificationsEnAttente(UUID employeId) {
-    List<NotificationPlanifiee> enAttente = notificationPlanifieeRepository.findByEmployeIdAndStatutIn(
-        employeId, List.of(StatutNotificationPlanifiee.planifiee));
+    List<NotificationPlanifiee> enAttente =
+        notificationPlanifieeRepository.findByEmployeIdAndStatutIn(
+            employeId, List.of(StatutNotificationPlanifiee.planifiee));
     for (NotificationPlanifiee notif : enAttente) {
       notif.annuler();
     }
@@ -156,4 +187,3 @@ class SurveillancePlanifieeService {
     return res;
   }
 }
-

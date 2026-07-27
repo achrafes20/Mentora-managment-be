@@ -8,8 +8,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.LocalDate;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -52,7 +52,8 @@ class NotificationPlanifiee {
 
   protected NotificationPlanifiee() {}
 
-  NotificationPlanifiee(UUID employeId, TypeFinSurveillee typeSurveillance, LocalDate dateEcheance) {
+  NotificationPlanifiee(
+      UUID employeId, TypeFinSurveillee typeSurveillance, LocalDate dateEcheance) {
     this.employeId = employeId;
     this.typeSurveillance = typeSurveillance;
     this.dateEcheance = dateEcheance;
@@ -77,13 +78,13 @@ class NotificationPlanifiee {
   StatutNotificationPlanifiee getStatut() {
     return statut;
   }
-  
+
   Instant getPremiereNotificationEnvoyeeLe() {
-      return premiereNotificationEnvoyeeLe;
+    return premiereNotificationEnvoyeeLe;
   }
-  
+
   Instant getRelanceEnvoyeeLe() {
-      return relanceEnvoyeeLe;
+    return relanceEnvoyeeLe;
   }
 
   void marquerEnvoyee() {

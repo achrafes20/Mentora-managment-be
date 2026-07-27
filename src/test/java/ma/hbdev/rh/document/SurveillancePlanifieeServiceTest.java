@@ -30,11 +30,9 @@ class SurveillancePlanifieeServiceTest {
     RestClient restClient = mock(RestClient.class);
     when(restClientBuilder.build()).thenReturn(restClient);
 
-    service = new SurveillancePlanifieeService(
-        repository,
-        employeService,
-        restClientBuilder,
-        "http://localhost:5678");
+    service =
+        new SurveillancePlanifieeService(
+            repository, employeService, restClientBuilder, "http://localhost:5678");
   }
 
   @Test

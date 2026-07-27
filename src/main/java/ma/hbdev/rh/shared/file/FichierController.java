@@ -28,8 +28,7 @@ class FichierController {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(fichier.typeMime()))
         .header(
-            HttpHeaders.CONTENT_DISPOSITION,
-            "inline; filename=\"" + fichier.nomOriginal() + "\"")
+            HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fichier.nomOriginal() + "\"")
         .body(ressource);
   }
 }

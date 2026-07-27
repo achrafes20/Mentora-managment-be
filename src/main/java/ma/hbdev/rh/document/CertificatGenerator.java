@@ -1,7 +1,6 @@
 package ma.hbdev.rh.document;
 
 import com.lowagie.text.Document;
-import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
 import com.lowagie.text.Font;
 import com.lowagie.text.FontFactory;
@@ -17,7 +16,8 @@ class CertificatGenerator {
 
   private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-  byte[] genererCertificatStage(String prenom, String nom, LocalDate dateEmbauche, LocalDate dateFin, String poste) {
+  byte[] genererCertificatStage(
+      String prenom, String nom, LocalDate dateEmbauche, LocalDate dateFin, String poste) {
     return genererDocument(
         "CERTIFICAT DE STAGE",
         "Nous soussignés, HB Développement, attestons par la présente que :",
@@ -27,7 +27,8 @@ class CertificatGenerator {
         "du " + format(dateEmbauche) + " au " + format(dateFin) + ".");
   }
 
-  byte[] genererCertificatTravail(String prenom, String nom, LocalDate dateEmbauche, LocalDate dateDepart, String poste) {
+  byte[] genererCertificatTravail(
+      String prenom, String nom, LocalDate dateEmbauche, LocalDate dateDepart, String poste) {
     return genererDocument(
         "CERTIFICAT DE TRAVAIL",
         "Nous soussignés, HB Développement, attestons par la présente que :",
@@ -38,7 +39,12 @@ class CertificatGenerator {
   }
 
   private byte[] genererDocument(
-      String titre, String intro, String nomComplet, String texteMilieu, String poste, String texteFin) {
+      String titre,
+      String intro,
+      String nomComplet,
+      String texteMilieu,
+      String poste,
+      String texteFin) {
     try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
       Document document = new Document();
       PdfWriter.getInstance(document, baos);
@@ -49,12 +55,14 @@ class CertificatGenerator {
       Font fontBold = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14);
 
       // En-tête (Entreprise)
-      Paragraph header = new Paragraph("HB Développement\nService des Ressources Humaines\n\n", fontBold);
+      Paragraph header =
+          new Paragraph("HB Développement\nService des Ressources Humaines\n\n", fontBold);
       header.setAlignment(Element.ALIGN_LEFT);
       document.add(header);
 
       // Date de génération
-      Paragraph dateGen = new Paragraph("Fait le : " + format(LocalDate.now()) + "\n\n", fontNormal);
+      Paragraph dateGen =
+          new Paragraph("Fait le : " + format(LocalDate.now()) + "\n\n", fontNormal);
       dateGen.setAlignment(Element.ALIGN_RIGHT);
       document.add(dateGen);
 
@@ -65,7 +73,7 @@ class CertificatGenerator {
 
       // Corps du texte
       document.add(new Paragraph(intro + "\n\n", fontNormal));
-      
+
       Paragraph pNom = new Paragraph(nomComplet + "\n\n", fontBold);
       pNom.setAlignment(Element.ALIGN_CENTER);
       document.add(pNom);

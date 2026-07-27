@@ -10,8 +10,7 @@ record EnvoiDocumentResponse(
     UUID fichierId,
     String destinataireEmail,
     Instant dateEnvoi,
-    UUID envoyePar
-) {
+    UUID envoyePar) {
   static EnvoiDocumentResponse depuis(EnvoiDocument envoi) {
     return new EnvoiDocumentResponse(
         envoi.getId(),
@@ -20,7 +19,6 @@ record EnvoiDocumentResponse(
         envoi.getFichierId(),
         envoi.getDestinataireEmail(),
         envoi.getDateEnvoi(),
-        envoi.getEnvoyePar()
-    );
+        envoi.getEnvoyePar());
   }
 }

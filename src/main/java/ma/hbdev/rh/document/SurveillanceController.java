@@ -24,11 +24,13 @@ class SurveillanceController {
   }
 
   @PostMapping("/run")
-  ResponseEntity<?> executerSurveillance(@RequestHeader(value = "X-Internal-Webhook-Secret", required = false) String secret) {
+  ResponseEntity<?> executerSurveillance(
+      @RequestHeader(value = "X-Internal-Webhook-Secret", required = false) String secret) {
     if (secret == null || !secret.equals(webhookSecret)) {
-      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Secret invalide"));
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+          .body(Map.of("error", "Secret invalide"));
     }
-    
+
     surveillancePlanifieeService.executerSurveillance();
     return ResponseEntity.ok(Map.of("status", "success"));
   }

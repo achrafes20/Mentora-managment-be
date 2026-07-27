@@ -37,20 +37,24 @@ class DocumentRhServiceTest {
     when(builder.requestFactory(org.mockito.ArgumentMatchers.any())).thenReturn(builder);
     when(builder.build()).thenReturn(restClient);
     when(restClient.post()).thenReturn(requestBodyUriSpec);
-    when(requestBodyUriSpec.uri(org.mockito.ArgumentMatchers.anyString())).thenReturn(requestBodyUriSpec);
-    when(requestBodyUriSpec.contentType(org.mockito.ArgumentMatchers.any())).thenReturn(requestBodyUriSpec);
-    when(requestBodyUriSpec.body(org.mockito.ArgumentMatchers.any())).thenReturn(requestBodyUriSpec);
+    when(requestBodyUriSpec.uri(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(requestBodyUriSpec);
+    when(requestBodyUriSpec.contentType(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(requestBodyUriSpec);
+    when(requestBodyUriSpec.body(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(requestBodyUriSpec);
     when(requestBodyUriSpec.retrieve()).thenReturn(responseSpec);
     when(responseSpec.toBodilessEntity()).thenThrow(new RuntimeException("boom"));
 
-    service = new DocumentRhService(
-        envoiDocumentRepository,
-        employeService,
-        certificatGenerator,
-        fileStorageService,
-        builder,
-        "http://localhost:5678",
-        notificationPlanifieeRepository);
+    service =
+        new DocumentRhService(
+            envoiDocumentRepository,
+            employeService,
+            certificatGenerator,
+            fileStorageService,
+            builder,
+            "http://localhost:5678",
+            notificationPlanifieeRepository);
   }
 
   @Test
@@ -59,41 +63,50 @@ class DocumentRhServiceTest {
     UUID employeId = UUID.randomUUID();
     UUID envoyeurId = UUID.randomUUID();
 
-    NotificationPlanifiee notif = new NotificationPlanifiee(employeId, TypeFinSurveillee.fin_stage, java.time.LocalDate.now());
+    NotificationPlanifiee notif =
+        new NotificationPlanifiee(
+            employeId, TypeFinSurveillee.fin_stage, java.time.LocalDate.now());
     notif.marquerEnvoyee();
 
     when(notificationPlanifieeRepository.findById(notifId)).thenReturn(Optional.of(notif));
-    when(employeService.recuperer(employeId)).thenReturn(new ma.hbdev.rh.employee.EmployeReponse(
-        employeId,
-        "Nom",
-        "Prenom",
-        "test@example.com",
-        null,
-        "Poste",
-        null,
-        null,
-        null,
-        java.time.LocalDate.now(),
-        "CDD",
-        java.time.LocalDate.now(),
-        java.time.LocalDate.now(),
-        null,
-        "actif",
-        null,
-        null,
-        null,
-        null));
+    when(employeService.recuperer(employeId))
+        .thenReturn(
+            new ma.hbdev.rh.employee.EmployeReponse(
+                employeId,
+                "Nom",
+                "Prenom",
+                "test@example.com",
+                null,
+                "Poste",
+                null,
+                null,
+                null,
+                java.time.LocalDate.now(),
+                "CDD",
+                java.time.LocalDate.now(),
+                java.time.LocalDate.now(),
+                null,
+                "actif",
+                null,
+                null,
+                null,
+                null));
     when(certificatGenerator.genererCertificatStage(
-        org.mockito.ArgumentMatchers.anyString(),
-        org.mockito.ArgumentMatchers.anyString(),
-        org.mockito.ArgumentMatchers.any(),
-        org.mockito.ArgumentMatchers.any(),
-        org.mockito.ArgumentMatchers.anyString()))
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyString()))
         .thenReturn(new byte[] {1, 2, 3});
-    when(fileStorageService.televerser(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
-        .thenReturn(new ma.hbdev.rh.shared.file.FichierUploade(UUID.randomUUID(), "file.pdf", "application/pdf", 3));
-    when(envoiDocumentRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
+    when(fileStorageService.televerser(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+        .thenReturn(
+            new ma.hbdev.rh.shared.file.FichierUploade(
+                UUID.randomUUID(), "file.pdf", "application/pdf", 3));
+    when(envoiDocumentRepository.save(org.mockito.ArgumentMatchers.any()))
+        .thenAnswer(invocation -> invocation.getArgument(0));
 
-    assertThrows(IllegalStateException.class, () -> service.renvoyerDepuisSurveillance(notifId, envoyeurId));
+    assertThrows(
+        IllegalStateException.class, () -> service.renvoyerDepuisSurveillance(notifId, envoyeurId));
   }
 }

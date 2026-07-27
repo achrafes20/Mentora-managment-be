@@ -4,11 +4,10 @@ import java.time.Duration;
 import java.util.UUID;
 import ma.hbdev.rh.employee.EmployeReponse;
 import ma.hbdev.rh.employee.EmployeService;
-import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.file.FichierUploade;
+import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.mail.RestClientFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,8 +46,10 @@ class DocumentRhService {
   }
 
   EnvoiDocument renvoyerDepuisSurveillance(UUID notifId, UUID envoyePar) {
-    NotificationPlanifiee notif = notificationPlanifieeRepository.findById(notifId)
-        .orElseThrow(() -> new IllegalArgumentException("Notification introuvable"));
+    NotificationPlanifiee notif =
+        notificationPlanifieeRepository
+            .findById(notifId)
+            .orElseThrow(() -> new IllegalArgumentException("Notification introuvable"));
 
     UUID employeId = notif.getEmployeId();
     EnvoiDocument envoi;
@@ -70,12 +71,13 @@ class DocumentRhService {
 
   EnvoiDocument envoyerCertificatStage(UUID employeId, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
-    byte[] pdf = certificatGenerator.genererCertificatStage(
-        employe.prenom(),
-        employe.nom(),
-        employe.dateEmbauche(),
-        employe.dateFinContratPrevue(),
-        employe.poste());
+    byte[] pdf =
+        certificatGenerator.genererCertificatStage(
+            employe.prenom(),
+            employe.nom(),
+            employe.dateEmbauche(),
+            employe.dateFinContratPrevue(),
+            employe.poste());
 
     return traiterEnvoi(
         employe,
@@ -83,18 +85,20 @@ class DocumentRhService {
         "certificat_stage.pdf",
         TypeDocumentRh.certificat_stage,
         "Votre certificat de stage",
-        "Bonjour,\n\nVeuillez trouver ci-joint votre certificat de stage. Merci de passer au bureau pour récupérer l'original.\n\nCordialement, RH",
+        "Bonjour,\n\nVeuillez trouver ci-joint votre certificat de stage. "
+            + "Merci de passer au bureau pour récupérer l'original.\n\nCordialement, RH",
         envoyePar);
   }
 
   EnvoiDocument envoyerCertificatTravail(UUID employeId, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
-    byte[] pdf = certificatGenerator.genererCertificatTravail(
-        employe.prenom(),
-        employe.nom(),
-        employe.dateEmbauche(),
-        employe.dateDepart(),
-        employe.poste());
+    byte[] pdf =
+        certificatGenerator.genererCertificatTravail(
+            employe.prenom(),
+            employe.nom(),
+            employe.dateEmbauche(),
+            employe.dateDepart(),
+            employe.poste());
 
     return traiterEnvoi(
         employe,
@@ -132,12 +136,14 @@ class DocumentRhService {
       UUID envoyePar) {
 
     // Sauvegarder le fichier généré
-    MultipartFile mockFile = new ByteArrayMultipartFile(contenuFichier, "file", nomFichier, "application/pdf");
+    MultipartFile mockFile =
+        new ByteArrayMultipartFile(contenuFichier, "file", nomFichier, "application/pdf");
     FichierUploade fichier = fileStorageService.televerser(mockFile, envoyePar);
 
     String destinataire = employe.email();
     if (destinataire == null || destinataire.trim().isEmpty()) {
-      throw new IllegalArgumentException("L'adresse e-mail de l'employé est requise pour envoyer ce document.");
+      throw new IllegalArgumentException(
+          "L'adresse e-mail de l'employé est requise pour envoyer ce document.");
     }
 
     // Lien de téléchargement (url de base api)
@@ -147,13 +153,9 @@ class DocumentRhService {
     // Envoi via n8n
     envoyerEmailViaWebhook(destinataire, sujet, messageFinal);
 
-    EnvoiDocument envoi = new EnvoiDocument(
-        employe.id(),
-        typeDocument,
-        fichier.id(),
-        destinataire,
-        messageFinal,
-        envoyePar);
+    EnvoiDocument envoi =
+        new EnvoiDocument(
+            employe.id(), typeDocument, fichier.id(), destinataire, messageFinal, envoyePar);
 
     return envoiDocumentRepository.save(envoi);
   }
@@ -161,7 +163,8 @@ class DocumentRhService {
   private void envoyerEmailViaWebhook(String to, String subject, String message) {
     record N8nPayload(String to, String subject, String message) {}
     try {
-      restClient.post()
+      restClient
+          .post()
           .uri(webhookUrl)
           .contentType(MediaType.APPLICATION_JSON)
           .body(new N8nPayload(to, subject, message))
