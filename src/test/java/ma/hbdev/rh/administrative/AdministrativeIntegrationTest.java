@@ -1,5 +1,6 @@
 package ma.hbdev.rh.administrative;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -22,6 +24,7 @@ import ma.hbdev.rh.auth.User;
 import ma.hbdev.rh.auth.UserRepository;
 import ma.hbdev.rh.shared.mattermost.MattermostClient;
 import ma.hbdev.rh.shared.mattermost.ResultatMattermost;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -127,9 +130,9 @@ class AdministrativeIntegrationTest {
 
   @Test
   void adminApprouvePuisAnnuleUnCongeAvecLedgerEtNotificationManager() throws Exception {
-    // Lundi->mardi (jamais dimanche, seul jour exclu du calcul de duree()) : garantit 2 jours
-    // ouvres quel que soit le jour d'execution du test, plutot qu'un plusDays(3)/plusDays(4)
-    // hardcode qui echoue des que la fenetre glisse sur un dimanche (cf. echec du 2026-07-22).
+    // Lundi->mardi (jamais samedi/dimanche, seuls jours exclus du calcul de duree()) : garantit 2
+    // jours ouvres quel que soit le jour d'execution du test, plutot qu'un plusDays(3)/plusDays(4)
+    // hardcode qui echoue des que la fenetre glisse sur un week-end (cf. echec du 2026-07-22).
     LocalDate debut = prochainLundiAuMoins(3);
     LocalDate fin = debut.plusDays(1);
     String demandeId =
@@ -407,6 +410,68 @@ class AdministrativeIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"joursParMois\": 1.0}"))
         .andExpect(status().isForbidden());
+  }
+
+  // EF-EXP-03
+  @Test
+  void exporteLHistoriqueDesDemandesEnExcelPourUnEmploye() throws Exception {
+    mockMvc.perform(
+        post("/api/demandes-administratives")
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {"employeId":"%s","typeDemande":"bon_sortie","dateDebut":"%s",
+                 "heureDepart":"10:00","heureRetourPrevue":"11:00","motif":"RDV export"}
+                """
+                    .formatted(employeId, LocalDate.now().plusDays(1))));
+
+    byte[] corps =
+        mockMvc
+            .perform(
+                get("/api/demandes-administratives/export")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .param("format", "xlsx")
+                    .param("employeId", employeId.toString()))
+            .andExpect(status().isOk())
+            .andExpect(
+                org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                    .string(
+                        "Content-Type",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+
+    try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
+      var feuille = classeur.getSheetAt(0);
+      assertThat(feuille.getRow(0).getCell(6).getStringCellValue()).isEqualTo("Motif");
+      assertThat(feuille.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Yassine Benali");
+      assertThat(feuille.getRow(1).getCell(6).getStringCellValue()).isEqualTo("RDV export");
+    }
+  }
+
+  @Test
+  void refuseAuManagerHorsPerimetreDExporterLesDemandesDeCetEmploye() throws Exception {
+    byte[] corps =
+        mockMvc
+            .perform(
+                get("/api/demandes-administratives/export")
+                    .header("Authorization", "Bearer " + autreManagerToken)
+                    .param("format", "xlsx")
+                    .param("employeId", employeId.toString()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+
+    // Meme perimetre que lister() : un manager hors equipe recoit un fichier vide (aucune ligne),
+    // pas une 403 sur l'export lui-meme (l'endpoint est ouvert Admin+Manager, le filtrage est
+    // applique par lister()).
+    try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
+      var feuille = classeur.getSheetAt(0);
+      assertThat(feuille.getLastRowNum()).isZero();
+    }
   }
 
   /** Premier lundi a au moins {@code joursMinimum} jours de calendrier a partir d'aujourd'hui. */

@@ -1,8 +1,10 @@
 package ma.hbdev.rh.employee;
 
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import ma.hbdev.rh.shared.export.FormatExport;
 import ma.hbdev.rh.shared.file.FichierInvalideException;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.web.ApiResponse;
@@ -59,6 +61,29 @@ public class EmployeController {
             .lister(departementId, managerId, typeContrat, statut, recherche, pageable)
             .map(EmployeReponse::depuis);
     return ApiResponse.ok(PagedResponse.of(page));
+  }
+
+  // EF-EXP-01 : réutilise les mêmes filtres/périmètre Manager que lister() — chemin statique
+  // "/export", résolu avant "/{id}" par Spring (spécificité de route), pas de conflit malgré la
+  // profondeur identique.
+  @GetMapping("/export")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  public ResponseEntity<byte[]> exporter(
+      @RequestParam FormatExport format,
+      @RequestParam(required = false) UUID departementId,
+      @RequestParam(required = false) UUID managerId,
+      @RequestParam(required = false) TypeContratEmploye typeContrat,
+      @RequestParam(required = false) StatutActifInactif statut,
+      @RequestParam(required = false) String recherche) {
+    byte[] contenu =
+        employeService.exporter(format, departementId, managerId, typeContrat, statut, recherche);
+    String nomFichier = "employes_" + LocalDate.now() + format.extension();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(format.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(nomFichier).build().toString())
+        .body(contenu);
   }
 
   @GetMapping("/{id}")

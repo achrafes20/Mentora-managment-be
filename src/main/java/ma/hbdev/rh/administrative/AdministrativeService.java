@@ -6,13 +6,19 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import ma.hbdev.rh.auth.DelegationService;
+import ma.hbdev.rh.shared.export.FormatExport;
+import ma.hbdev.rh.shared.export.FormatageExport;
+import ma.hbdev.rh.shared.export.TableauExportService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -31,6 +37,19 @@ class AdministrativeService {
   private static final Set<String> TYPES_CONTRAT_CONNUS =
       Set.of("CDI", "CDD", "STAGIAIRE", "STAGIAIRE_REMUNERE");
 
+  private static final List<String> ENTETES_EXPORT_DEMANDES =
+      List.of(
+          "Employé",
+          "Type",
+          "Statut",
+          "Date début",
+          "Date fin",
+          "Durée (jours)",
+          "Motif",
+          "Créé le",
+          "Décision le",
+          "Décidé par");
+
   private final DemandeAdministrativeRepository demandeRepository;
   private final MouvementCongeAdmRepository mouvementRepository;
   private final JourFerieRepository jourFerieRepository;
@@ -38,6 +57,7 @@ class AdministrativeService {
   private final JdbcTemplate jdbcTemplate;
   private final ApplicationEventPublisher evenements;
   private final DelegationService delegationService;
+  private final TableauExportService tableauExportService;
 
   AdministrativeService(
       DemandeAdministrativeRepository demandeRepository,
@@ -46,7 +66,8 @@ class AdministrativeService {
       PeriodeBlocageCongesRepository periodeBlocageRepository,
       JdbcTemplate jdbcTemplate,
       ApplicationEventPublisher evenements,
-      DelegationService delegationService) {
+      DelegationService delegationService,
+      TableauExportService tableauExportService) {
     this.demandeRepository = demandeRepository;
     this.mouvementRepository = mouvementRepository;
     this.jourFerieRepository = jourFerieRepository;
@@ -54,6 +75,7 @@ class AdministrativeService {
     this.jdbcTemplate = jdbcTemplate;
     this.evenements = evenements;
     this.delegationService = delegationService;
+    this.tableauExportService = tableauExportService;
   }
 
   @Transactional(readOnly = true)
@@ -410,7 +432,9 @@ class AdministrativeService {
         .forEach(feries::add);
     BigDecimal total = BigDecimal.ZERO;
     for (LocalDate jour = debut; !jour.isAfter(fin); jour = jour.plusDays(1)) {
-      if (jour.getDayOfWeek() != DayOfWeek.SUNDAY && !feries.contains(jour)) {
+      DayOfWeek jourSemaine = jour.getDayOfWeek();
+      boolean weekEnd = jourSemaine == DayOfWeek.SATURDAY || jourSemaine == DayOfWeek.SUNDAY;
+      if (!weekEnd && !feries.contains(jour)) {
         total = total.add(BigDecimal.ONE);
       }
     }
@@ -474,5 +498,64 @@ class AdministrativeService {
 
   private UUID utilisateurCourant() {
     return CurrentUser.id().orElseThrow(() -> new AccessDeniedException("Non authentifie"));
+  }
+
+  // EF-EXP-03 : mêmes filtres/périmètre (Manager + délégué actif) que lister(), pas de logique
+  // dupliquée.
+  @Transactional(readOnly = true)
+  byte[] exporter(
+      UUID employeId,
+      TypeDemandeAdministrative type,
+      StatutDemandeAdministrative statut,
+      LocalDate debut,
+      LocalDate fin,
+      FormatExport format) {
+    List<DemandeAdministrativeReponse> demandes =
+        lister(employeId, type, statut, debut, fin, Pageable.unpaged()).getContent();
+    Map<UUID, String> noms =
+        nomsUtilisateurs(
+            demandes.stream().map(DemandeAdministrativeReponse::approuveRejetePar).toList());
+    List<List<String>> lignes = demandes.stream().map(d -> ligneExport(d, noms)).toList();
+    return tableauExportService.generer(
+        format, "Demandes administratives", ENTETES_EXPORT_DEMANDES, lignes);
+  }
+
+  // Même principe que AuditExportService#nomsUtilisateurs : une requête par utilisateur distinct
+  // (toujours peu nombreux — Admin/délégués), pour afficher "Décidé par" en nom plutôt qu'en UUID.
+  private Map<UUID, String> nomsUtilisateurs(List<UUID> utilisateurIds) {
+    Map<UUID, String> noms = new HashMap<>();
+    for (UUID id : utilisateurIds.stream().distinct().toList()) {
+      if (id == null) {
+        continue;
+      }
+      try {
+        noms.put(
+            id,
+            jdbcTemplate.queryForObject(
+                "select prenom || ' ' || nom from utilisateurs where id = ?", String.class, id));
+      } catch (EmptyResultDataAccessException e) {
+        noms.put(id, id.toString());
+      }
+    }
+    return noms;
+  }
+
+  private static List<String> ligneExport(
+      DemandeAdministrativeReponse demande, Map<UUID, String> noms) {
+    return List.of(
+        texte(demande.employeNomComplet()),
+        texte(demande.typeDemande()),
+        texte(demande.statut()),
+        texte(demande.dateDebut()),
+        texte(demande.dateFin()),
+        texte(demande.dureeJours()),
+        texte(demande.motif()),
+        FormatageExport.dateHeure(demande.creeLe()),
+        FormatageExport.dateHeure(demande.dateDecision()),
+        noms.getOrDefault(demande.approuveRejetePar(), ""));
+  }
+
+  private static String texte(Object valeur) {
+    return valeur == null ? "" : valeur.toString();
   }
 }

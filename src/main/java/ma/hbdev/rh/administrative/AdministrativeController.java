@@ -4,9 +4,14 @@ import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import ma.hbdev.rh.shared.export.FormatExport;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import ma.hbdev.rh.shared.web.PagedResponse;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,6 +45,26 @@ class AdministrativeController {
       Pageable pageable) {
     return ApiResponse.ok(
         PagedResponse.of(service.lister(employeId, type, statut, debut, fin, pageable)));
+  }
+
+  // EF-EXP-03 : réutilise lister() (mêmes filtres/périmètre) — chemin statique, aucune ambiguïté
+  // avec "/{id}/..." (pas de mapping "/{id}" seul sur ce contrôleur).
+  @GetMapping("/export")
+  ResponseEntity<byte[]> exporter(
+      @RequestParam FormatExport format,
+      @RequestParam(required = false) UUID employeId,
+      @RequestParam(required = false) TypeDemandeAdministrative type,
+      @RequestParam(required = false) StatutDemandeAdministrative statut,
+      @RequestParam(required = false) LocalDate debut,
+      @RequestParam(required = false) LocalDate fin) {
+    byte[] contenu = service.exporter(employeId, type, statut, debut, fin, format);
+    String nomFichier = "demandes_administratives_" + LocalDate.now() + format.extension();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(format.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(nomFichier).build().toString())
+        .body(contenu);
   }
 
   @PostMapping

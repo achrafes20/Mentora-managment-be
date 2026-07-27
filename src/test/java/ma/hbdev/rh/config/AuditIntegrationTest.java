@@ -3,10 +3,12 @@ package ma.hbdev.rh.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -16,6 +18,7 @@ import ma.hbdev.rh.auth.RoleUtilisateur;
 import ma.hbdev.rh.auth.SessionRepository;
 import ma.hbdev.rh.auth.User;
 import ma.hbdev.rh.auth.UserRepository;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -222,6 +225,52 @@ class AuditIntegrationTest {
   void refuseAuManager() throws Exception {
     mockMvc
         .perform(get("/api/audit").header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isForbidden());
+  }
+
+  // EF-CFG-05
+  @Test
+  void exporteLeJournalDAuditFiltreParModuleEnExcel() throws Exception {
+    // "creation"/"employe" : convention réellement utilisée par les EvenementMetier (cf.
+    // EmployeModifieEvent), pas la forme synthétique "employe.creation" du premier jet de ce test —
+    // corrigée en même temps que la fusion Action/Entité (AuditExportService#libelleAction).
+    insererEntree(adminId, "creation", "employe", "employe", Instant.now());
+    insererEntree(
+        adminId, "config.modif", "configuration", "configuration_parametre", Instant.now());
+
+    byte[] corps =
+        mockMvc
+            .perform(
+                get("/api/audit/export")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .param("format", "xlsx")
+                    .param("module", "employe"))
+            .andExpect(status().isOk())
+            .andExpect(
+                header()
+                    .string(
+                        "Content-Type",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+
+    try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
+      var feuille = classeur.getSheetAt(0);
+      assertThat(feuille.getLastRowNum()).isEqualTo(1);
+      // Action + Entité fusionnées en une seule cellule (EF-CFG-05, lisibilité) : "Création" (verbe
+      // mappé) + "Employé" (entiteType mappé).
+      assertThat(feuille.getRow(1).getCell(2).getStringCellValue()).isEqualTo("Création - Employé");
+    }
+  }
+
+  @Test
+  void refuseAuManagerDExporterLAudit() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/audit/export")
+                .header("Authorization", "Bearer " + managerToken)
+                .param("format", "pdf"))
         .andExpect(status().isForbidden());
   }
 }

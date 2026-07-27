@@ -76,7 +76,7 @@ public class AnomalieService {
   private void analyserJourPourEmploye(UUID employeId, LocalDate date, HoraireReference horaire) {
 
     // Court-circuit télétravail (EF-ATT-09)
-    TypeJourSemaine jourSemaine = TypeJourSemaine.valueOf(date.getDayOfWeek().name().toLowerCase());
+    TypeJourSemaine jourSemaine = TypeJourSemaine.depuis(date.getDayOfWeek());
     if (planningRepository.estEnTeletravail(employeId, date, jourSemaine)) {
       return;
     }

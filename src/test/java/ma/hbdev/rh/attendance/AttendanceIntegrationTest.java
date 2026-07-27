@@ -8,12 +8,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
+import java.sql.Timestamp;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 import ma.hbdev.rh.auth.LoginRequest;
 import ma.hbdev.rh.auth.RoleUtilisateur;
 import ma.hbdev.rh.auth.User;
 import ma.hbdev.rh.auth.UserRepository;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,7 +68,8 @@ class AttendanceIntegrationTest {
     jdbcTemplate.execute(
         """
         truncate table notifications_mattermost, notifications_in_app, journal_audit,
-          pointages, anomalies_pointage, qr_codes, employes, departements, sessions_utilisateur
+          pointages, anomalies_pointage, qr_codes, mouvements_conges, demandes_administratives,
+          employes, departements, sessions_utilisateur
         cascade
         """);
     // politique_anomalies (EF-ATT-11) est une donnée de référence seedée par V12, jamais recréée
@@ -306,6 +312,134 @@ class AttendanceIntegrationTest {
     pointageService.enregistrerAnomalieIdempotent(
         employeId, aujourdHui.minusDays(2), TypeAnomaliePointage.retard, null, null);
     assertThat(compterNotificationsManager(managerId)).isEqualTo(1);
+  }
+
+  // EF-EXP-02 / EF-ATT-10
+  @Test
+  void exporteLaFeuilleDePresenceAvecDistinctionTeletravailEtAbsence() throws Exception {
+    UUID managerId =
+        jdbcTemplate.queryForObject(
+            "select id from utilisateurs where email = ?", UUID.class, "manager@hbdev.ma");
+    String reqDept = "{\"nom\":\"RH Export Test\",\"managerId\":\"%s\"}".formatted(managerId);
+    String resDept =
+        mockMvc
+            .perform(
+                post("/api/departements")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqDept))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String deptId = objectMapper.readTree(resDept).at("/data/id").asText();
+
+    String reqEmp =
+        """
+        {"nom":"Presence","prenom":"Employe","email":"presence.export@hbdev.ma",
+         "telephone":"0600000002","poste":"Dev","departementId":"%s",
+         "dateEmbauche":"2025-01-01","typeContrat":"CDI"}
+        """
+            .formatted(deptId);
+    String resEmp =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqEmp))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID employeId = UUID.fromString(objectMapper.readTree(resEmp).at("/data/id").asText());
+
+    String resQr =
+        mockMvc
+            .perform(
+                post("/api/pointages/qr-code/generer/" + employeId)
+                    .header("Authorization", "Bearer " + adminToken))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID qrCodeId = UUID.fromString(objectMapper.readTree(resQr).at("/data/id").asText());
+
+    LocalDate lundi = LocalDate.now().plusDays(10);
+    while (lundi.getDayOfWeek() != DayOfWeek.MONDAY) {
+      lundi = lundi.plusDays(1);
+    }
+    LocalDate mercredi = lundi.plusDays(2);
+    LocalDate jeudi = lundi.plusDays(3);
+    ZoneId zone = ZoneId.of("Africa/Casablanca");
+
+    // Lundi : scan réel entrée/sortie -> "Présent". Mardi : couvert par un planning de
+    // télétravail -> "Télétravail" malgré l'absence de scan. Mercredi : ni scan ni télétravail ->
+    // "Absence". Jeudi : couvert par un congé approuvé -> "Congé" plutôt que "Absence" (EF-ATT-10,
+    // ajouté le 2026-07-27 — un congé validé rendait "Absence" comme un vrai no-show). Insertion
+    // directe en SQL (comme AuditIntegrationTest#insererEntree) car le seul chemin applicatif pour
+    // un pointage est le scan kiosque, toujours horodaté à Instant.now() — impossible de fabriquer
+    // un historique déterministe autrement ; même principe repris pour la demande de congé afin de
+    // rester indépendant du solde de congés réel de l'employé de test.
+    jdbcTemplate.update(
+        "insert into pointages(employe_id, qr_code_id, type_scan, horodatage) values"
+            + " (?, ?, cast('entree' as type_scan_pointage), ?)",
+        employeId,
+        qrCodeId,
+        Timestamp.from(lundi.atTime(9, 0).atZone(zone).toInstant()));
+    jdbcTemplate.update(
+        "insert into pointages(employe_id, qr_code_id, type_scan, horodatage) values"
+            + " (?, ?, cast('sortie' as type_scan_pointage), ?)",
+        employeId,
+        qrCodeId,
+        Timestamp.from(lundi.atTime(17, 0).atZone(zone).toInstant()));
+
+    mockMvc
+        .perform(
+            post("/api/employes/{employeId}/teletravail", employeId)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"dateDebut":"%s","dateFin":"%s","jours":["mardi"]}
+                    """
+                        .formatted(lundi, mercredi)))
+        .andExpect(status().isCreated());
+
+    jdbcTemplate.update(
+        """
+        insert into demandes_administratives(employe_id, type_demande, granularite, statut,
+          date_debut, date_fin)
+        values (?, cast('conge' as type_demande_administrative),
+          cast('journee' as granularite_conge),
+          cast('approuvee' as statut_demande_administrative), ?, ?)
+        """,
+        employeId,
+        jeudi,
+        jeudi);
+
+    byte[] corps =
+        mockMvc
+            .perform(
+                get("/api/pointages/export")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .param("format", "xlsx")
+                    .param("employeId", employeId.toString())
+                    .param("debut", lundi.toString())
+                    .param("fin", jeudi.toString()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+
+    try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
+      var feuille = classeur.getSheetAt(0);
+      // En-tête + 4 jours (lundi/mardi/mercredi/jeudi, aucun dimanche dans la plage).
+      assertThat(feuille.getLastRowNum()).isEqualTo(4);
+      assertThat(feuille.getRow(1).getCell(3).getStringCellValue()).isEqualTo("Présent");
+      // 09h-17h = 8h, moins la pause midi d'1h déduite systématiquement (EF-ATT-03) = 7h00.
+      assertThat(feuille.getRow(1).getCell(4).getStringCellValue()).isEqualTo("7h00");
+      assertThat(feuille.getRow(2).getCell(3).getStringCellValue()).isEqualTo("Télétravail");
+      assertThat(feuille.getRow(3).getCell(3).getStringCellValue()).isEqualTo("Absence");
+      assertThat(feuille.getRow(4).getCell(3).getStringCellValue()).isEqualTo("Congé");
+    }
   }
 
   private int compterNotificationsManager(UUID managerId) {
