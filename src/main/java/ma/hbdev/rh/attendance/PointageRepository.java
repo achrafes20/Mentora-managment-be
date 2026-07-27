@@ -35,4 +35,14 @@ interface PointageRepository extends JpaRepository<Pointage, UUID> {
       "SELECT DISTINCT p.employeId FROM Pointage p WHERE p.horodatage >= :debut AND p.horodatage < :fin")
   List<UUID> findEmployeIdsAvecPointageEntre(
       @Param("debut") Instant debut, @Param("fin") Instant fin);
+
+  /** EF-EXP-02 : tous les scans d'une équipe sur une période, en un seul aller-retour DB. */
+  @Query(
+      "SELECT p FROM Pointage p WHERE p.employeId IN :employeIds"
+          + " AND p.horodatage >= :debut AND p.horodatage < :fin"
+          + " ORDER BY p.employeId ASC, p.horodatage ASC")
+  List<Pointage> findByEmployeIdInAndHorodatageBetween(
+      @Param("employeIds") List<UUID> employeIds,
+      @Param("debut") Instant debut,
+      @Param("fin") Instant fin);
 }

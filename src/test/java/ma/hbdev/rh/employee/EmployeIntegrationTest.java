@@ -1,5 +1,6 @@
 package ma.hbdev.rh.employee;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -11,12 +12,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.util.UUID;
 import ma.hbdev.rh.auth.LoginRequest;
 import ma.hbdev.rh.auth.RoleUtilisateur;
 import ma.hbdev.rh.auth.SessionRepository;
 import ma.hbdev.rh.auth.User;
 import ma.hbdev.rh.auth.UserRepository;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -443,5 +447,102 @@ class EmployeIntegrationTest {
     mockMvc
         .perform(get("/api/employes/{id}", id).header("Authorization", "Bearer " + managerToken))
         .andExpect(status().isForbidden());
+  }
+
+  // EF-EXP-01
+  @Test
+  void exporteLaListeDesEmployesEnExcelAvecLesMemesFiltresQueLaListe() throws Exception {
+    mockMvc.perform(
+        post("/api/employes")
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requeteCreation("export.xlsx@test.ma", "CDI", null)));
+
+    byte[] corps =
+        mockMvc
+            .perform(
+                get("/api/employes/export")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .param("format", "xlsx")
+                    .param("recherche", "export.xlsx"))
+            .andExpect(status().isOk())
+            .andExpect(
+                header()
+                    .string(
+                        "Content-Type",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .andExpect(
+                header()
+                    .string(
+                        "Content-Disposition", org.hamcrest.Matchers.containsString("employes_")))
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+
+    try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
+      var feuille = classeur.getSheetAt(0);
+      assertThat(feuille.getRow(0).getCell(2).getStringCellValue()).isEqualTo("Email");
+      Row ligne = feuille.getRow(1);
+      assertThat(ligne.getCell(2).getStringCellValue()).isEqualTo("export.xlsx@test.ma");
+    }
+  }
+
+  @Test
+  void exporteLaListeDesEmployesEnPdf() throws Exception {
+    mockMvc.perform(
+        post("/api/employes")
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requeteCreation("export.pdf@test.ma", "CDI", null)));
+
+    byte[] corps =
+        mockMvc
+            .perform(
+                get("/api/employes/export")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .param("format", "pdf"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "application/pdf"))
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+
+    assertThat(corps).isNotEmpty();
+    assertThat(new String(corps, 0, 5, java.nio.charset.StandardCharsets.US_ASCII))
+        .isEqualTo("%PDF-");
+  }
+
+  @Test
+  void managerNExporteQueSonPropreDepartement() throws Exception {
+    mockMvc.perform(
+        post("/api/employes")
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requeteCreation("equipe.export@test.ma", "CDI", null)));
+    mockMvc.perform(
+        post("/api/employes")
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                requeteCreationPourDepartement(
+                    "horsperimetre.export@test.ma", "CDI", null, autreDepartementId)));
+
+    byte[] corps =
+        mockMvc
+            .perform(
+                get("/api/employes/export")
+                    .header("Authorization", "Bearer " + managerToken)
+                    .param("format", "xlsx"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+
+    try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
+      var feuille = classeur.getSheetAt(0);
+      assertThat(feuille.getLastRowNum()).isEqualTo(1);
+      assertThat(feuille.getRow(1).getCell(2).getStringCellValue())
+          .isEqualTo("equipe.export@test.ma");
+    }
   }
 }

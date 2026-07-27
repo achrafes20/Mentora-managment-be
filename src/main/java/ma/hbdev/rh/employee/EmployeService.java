@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import ma.hbdev.rh.shared.export.FormatExport;
+import ma.hbdev.rh.shared.export.TableauExportService;
 import ma.hbdev.rh.shared.file.FichierInvalideException;
 import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.mail.MailService;
@@ -22,6 +24,27 @@ class EmployeService {
 
   private static final Set<String> TYPES_MIME_PHOTO = Set.of("image/jpeg", "image/png");
 
+  private static final List<String> ENTETES_EXPORT =
+      List.of(
+          "Nom",
+          "Prénom",
+          "Email",
+          "Téléphone",
+          "Poste",
+          "Département",
+          "Type de contrat",
+          "Date d'embauche",
+          "Statut",
+          "Date de fin de contrat prévue",
+          "Date de départ");
+
+  // EF-EXP-01 : le PDF est une fiche de lecture rapide (roster), pas l'export de référence — se
+  // limite aux champs utiles à un coup d'œil ; le fichier Excel, lui, garde tous les champs
+  // (Email/Téléphone/dates de sortie) pour un usage de données de travail.
+  private static final List<String> ENTETES_EXPORT_PDF =
+      List.of(
+          "Nom", "Prénom", "Département", "Poste", "Type de contrat", "Date d'embauche", "Statut");
+
   private final EmployeRepository employeRepository;
   private final DepartementRepository departementRepository;
   private final EmployeTransfertRepository transfertRepository;
@@ -29,6 +52,7 @@ class EmployeService {
   private final FileStorageService fileStorageService;
   private final MailService mailService;
   private final ApplicationEventPublisher evenements;
+  private final TableauExportService tableauExportService;
 
   EmployeService(
       EmployeRepository employeRepository,
@@ -37,7 +61,8 @@ class EmployeService {
       EmployeDocumentRepository documentRepository,
       FileStorageService fileStorageService,
       MailService mailService,
-      ApplicationEventPublisher evenements) {
+      ApplicationEventPublisher evenements,
+      TableauExportService tableauExportService) {
     this.employeRepository = employeRepository;
     this.departementRepository = departementRepository;
     this.transfertRepository = transfertRepository;
@@ -45,6 +70,7 @@ class EmployeService {
     this.fileStorageService = fileStorageService;
     this.mailService = mailService;
     this.evenements = evenements;
+    this.tableauExportService = tableauExportService;
   }
 
   @Transactional(readOnly = true)
@@ -307,5 +333,55 @@ class EmployeService {
 
   private static String blancVersNull(String valeur) {
     return (valeur == null || valeur.isBlank()) ? null : valeur;
+  }
+
+  // EF-EXP-01 : mêmes filtres/périmètre Manager que lister(), pas de logique dupliquée.
+  @Transactional(readOnly = true)
+  byte[] exporter(
+      FormatExport format,
+      UUID departementId,
+      UUID managerId,
+      TypeContratEmploye typeContrat,
+      StatutActifInactif statut,
+      String recherche) {
+    List<Employe> employes =
+        lister(departementId, managerId, typeContrat, statut, recherche, Pageable.unpaged())
+            .getContent();
+    if (format == FormatExport.pdf) {
+      List<List<String>> lignesPdf = employes.stream().map(EmployeService::lignePdf).toList();
+      return tableauExportService.generer(format, "Employes", ENTETES_EXPORT_PDF, lignesPdf);
+    }
+    List<List<String>> lignes = employes.stream().map(EmployeService::ligneExport).toList();
+    return tableauExportService.generer(format, "Employes", ENTETES_EXPORT, lignes);
+  }
+
+  private static List<String> ligneExport(Employe employe) {
+    return List.of(
+        texte(employe.getNom()),
+        texte(employe.getPrenom()),
+        texte(employe.getEmail()),
+        texte(employe.getTelephone()),
+        texte(employe.getPoste()),
+        texte(employe.getDepartement() == null ? null : employe.getDepartement().getNom()),
+        texte(employe.getTypeContrat() == null ? null : employe.getTypeContrat().name()),
+        texte(employe.getDateEmbauche()),
+        texte(employe.getStatut() == null ? null : employe.getStatut().name()),
+        texte(employe.getDateFinContratPrevue()),
+        texte(employe.getDateDepart()));
+  }
+
+  private static List<String> lignePdf(Employe employe) {
+    return List.of(
+        texte(employe.getNom()),
+        texte(employe.getPrenom()),
+        texte(employe.getDepartement() == null ? null : employe.getDepartement().getNom()),
+        texte(employe.getPoste()),
+        texte(employe.getTypeContrat() == null ? null : employe.getTypeContrat().name()),
+        texte(employe.getDateEmbauche()),
+        texte(employe.getStatut() == null ? null : employe.getStatut().name()));
+  }
+
+  private static String texte(Object valeur) {
+    return valeur == null ? "" : valeur.toString();
   }
 }

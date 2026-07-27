@@ -37,6 +37,7 @@
         <maven-checkstyle-plugin.version>3.5.0</maven-checkstyle-plugin.version>
         <poi.version>5.3.0</poi.version>
         <commons-csv.version>1.11.0</commons-csv.version>
+        <pdfbox.version>3.0.3</pdfbox.version>
     </properties>
 
     <!-- ================================================================
@@ -138,6 +139,14 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-csv</artifactId>
             <version>${commons-csv.version}</version>
+        </dependency>
+
+        <!-- === Génération PDF (EF-EXP — export Excel/PDF) === -->
+        <!-- Apache PDFBox : Apache License 2.0 (permissif, pas de copyleft comme iText 5+/7 AGPL). -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
         </dependency>
 
         <!-- === Lombok — Boilerplate Reduction === -->
