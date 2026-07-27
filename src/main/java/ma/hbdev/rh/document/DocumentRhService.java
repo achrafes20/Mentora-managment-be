@@ -1,0 +1,182 @@
+package ma.hbdev.rh.document;
+
+import java.time.Duration;
+import java.util.UUID;
+import ma.hbdev.rh.employee.EmployeReponse;
+import ma.hbdev.rh.employee.EmployeService;
+import ma.hbdev.rh.shared.file.FichierUploade;
+import ma.hbdev.rh.shared.file.FileStorageService;
+import ma.hbdev.rh.shared.mail.RestClientFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.multipart.MultipartFile;
+
+@Service
+@Transactional
+class DocumentRhService {
+
+  private final EnvoiDocumentRhRepository envoiDocumentRepository;
+  private final EmployeService employeService;
+  private final CertificatGenerator certificatGenerator;
+  private final FileStorageService fileStorageService;
+  private final RestClient restClient;
+  private final String webhookUrl;
+  private final NotificationPlanifieeRepository notificationPlanifieeRepository;
+
+  DocumentRhService(
+      EnvoiDocumentRhRepository envoiDocumentRepository,
+      EmployeService employeService,
+      CertificatGenerator certificatGenerator,
+      FileStorageService fileStorageService,
+      RestClient.Builder restClientBuilder,
+      @Value("${n8n.webhook.url:http://localhost:5678}") String n8nBaseUrl,
+      NotificationPlanifieeRepository notificationPlanifieeRepository) {
+    this.envoiDocumentRepository = envoiDocumentRepository;
+    this.employeService = employeService;
+    this.certificatGenerator = certificatGenerator;
+    this.fileStorageService = fileStorageService;
+    this.restClient =
+        RestClientFactory.buildWithTimeouts(
+            restClientBuilder, Duration.ofSeconds(5), Duration.ofSeconds(10));
+    this.webhookUrl = n8nBaseUrl + "/webhook/notify-email";
+    this.notificationPlanifieeRepository = notificationPlanifieeRepository;
+  }
+
+  EnvoiDocument renvoyerDepuisSurveillance(UUID notifId, UUID envoyePar) {
+    NotificationPlanifiee notif =
+        notificationPlanifieeRepository
+            .findById(notifId)
+            .orElseThrow(() -> new IllegalArgumentException("Notification introuvable"));
+
+    UUID employeId = notif.getEmployeId();
+    EnvoiDocument envoi;
+    if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_stage) {
+      envoi = envoyerCertificatStage(employeId, envoyePar);
+    } else {
+      envoi = envoyerCertificatTravail(employeId, envoyePar);
+    }
+
+    if (notif.getStatut() == StatutNotificationPlanifiee.planifiee) {
+      notif.marquerEnvoyee();
+    } else if (notif.getStatut() == StatutNotificationPlanifiee.envoyee) {
+      notif.marquerRelancee();
+    }
+    notificationPlanifieeRepository.save(notif);
+
+    return envoi;
+  }
+
+  EnvoiDocument envoyerCertificatStage(UUID employeId, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    byte[] pdf =
+        certificatGenerator.genererCertificatStage(
+            employe.prenom(),
+            employe.nom(),
+            employe.dateEmbauche(),
+            employe.dateFinContratPrevue(),
+            employe.poste());
+
+    return traiterEnvoi(
+        employe,
+        pdf,
+        "certificat_stage.pdf",
+        TypeDocumentRh.certificat_stage,
+        "Votre certificat de stage",
+        "Bonjour,\n\nVeuillez trouver ci-joint votre certificat de stage. "
+            + "Merci de passer au bureau pour récupérer l'original.\n\nCordialement, RH",
+        envoyePar);
+  }
+
+  EnvoiDocument envoyerCertificatTravail(UUID employeId, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    byte[] pdf =
+        certificatGenerator.genererCertificatTravail(
+            employe.prenom(),
+            employe.nom(),
+            employe.dateEmbauche(),
+            employe.dateDepart(),
+            employe.poste());
+
+    return traiterEnvoi(
+        employe,
+        pdf,
+        "certificat_travail.pdf",
+        TypeDocumentRh.certificat_travail,
+        "Votre certificat de travail",
+        "Bonjour,\n\nVeuillez trouver ci-joint votre certificat de travail suite à votre départ.\n\nCordialement, RH",
+        envoyePar);
+  }
+
+  EnvoiDocument envoyerDocumentLibre(UUID employeId, MultipartFile file, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    try {
+      return traiterEnvoi(
+          employe,
+          file.getBytes(),
+          file.getOriginalFilename(),
+          TypeDocumentRh.document_libre,
+          "Nouveau document RH",
+          "Bonjour,\n\nVeuillez trouver un document RH en pièce jointe.\n\nCordialement, RH",
+          envoyePar);
+    } catch (Exception e) {
+      throw new RuntimeException("Erreur lors de la lecture du fichier", e);
+    }
+  }
+
+  private EnvoiDocument traiterEnvoi(
+      EmployeReponse employe,
+      byte[] contenuFichier,
+      String nomFichier,
+      TypeDocumentRh typeDocument,
+      String sujet,
+      String corps,
+      UUID envoyePar) {
+
+    // Sauvegarder le fichier généré
+    MultipartFile mockFile =
+        new ByteArrayMultipartFile(contenuFichier, "file", nomFichier, "application/pdf");
+    FichierUploade fichier = fileStorageService.televerser(mockFile, envoyePar);
+
+    String destinataire = employe.email();
+    if (destinataire == null || destinataire.trim().isEmpty()) {
+      throw new IllegalArgumentException(
+          "L'adresse e-mail de l'employé est requise pour envoyer ce document.");
+    }
+
+    // Lien de téléchargement (url de base api)
+    String lienTelechargement = "http://localhost:8080/api/fichiers/" + fichier.id();
+    String messageFinal = corps + "\n\nTélécharger le document : " + lienTelechargement;
+
+    // Envoi via n8n
+    envoyerEmailViaWebhook(destinataire, sujet, messageFinal);
+
+    EnvoiDocument envoi =
+        new EnvoiDocument(
+            employe.id(), typeDocument, fichier.id(), destinataire, messageFinal, envoyePar);
+
+    return envoiDocumentRepository.save(envoi);
+  }
+
+  private void envoyerEmailViaWebhook(String to, String subject, String message) {
+    record N8nPayload(String to, String subject, String message) {}
+    try {
+      restClient
+          .post()
+          .uri(webhookUrl)
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(new N8nPayload(to, subject, message))
+          .retrieve()
+          .toBodilessEntity();
+    } catch (Exception e) {
+      throw new IllegalStateException(
+          "Échec de l'envoi du document via le webhook n8n : " + e.getMessage(), e);
+    }
+  }
+
+  private EmployeReponse trouverEmploye(UUID id) {
+    return employeService.recuperer(id);
+  }
+}

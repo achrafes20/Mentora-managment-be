@@ -20,7 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional
-class EmployeService {
+public class EmployeService {
 
   private static final Set<String> TYPES_MIME_PHOTO = Set.of("image/jpeg", "image/png");
 
@@ -104,6 +104,11 @@ class EmployeService {
             .orElseThrow(() -> new EmployeIntrouvableException(id));
     verifierPerimetreManager(employe);
     return employe;
+  }
+
+  @Transactional(readOnly = true)
+  public EmployeReponse recuperer(UUID id) {
+    return EmployeReponse.depuis(trouver(id));
   }
 
   // EF-AUTH-03 : le Manager n'a accès en lecture qu'aux employés de son propre département.

@@ -38,10 +38,12 @@ public class SecurityConfig {
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
     "/api/kiosque/**",
+    "/api/fichiers/**",
     // Appelés par n8n (jamais par un utilisateur connecté) — protégés par InternalWebhookGuard
     // (secret partagé en en-tête), pas par une session JWT. EF-REC-02/EF-REC-12.
     "/api/recruitment/ingest",
     "/api/recruitment/candidatures/archiver-expirees",
+    "/api/internal/surveillance/**",
     "/v3/api-docs/**",
     "/swagger-ui/**",
     "/swagger-ui.html"
@@ -99,7 +101,8 @@ public class SecurityConfig {
     configuration.setAllowedMethods(
         Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(
-        Arrays.asList("Authorization", "Content-Type", "Cache-Control"));
+        Arrays.asList(
+            "Authorization", "Content-Type", "Cache-Control", "X-Internal-Webhook-Secret"));
     configuration.setExposedHeaders(Arrays.asList("Authorization"));
     configuration.setAllowCredentials(true);
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
