@@ -255,14 +255,18 @@ public class PointageService {
     return pointageRepository.findByEmployeId(employeId, pageable);
   }
 
-  /** Correction manuelle EF-ATT-06 (Could). */
+  /** Correction manuelle EF-ATT-06 (Could) — journalisée dans journal_audit (NFR-SEC-03). */
   public Pointage corrigerManuellement(UUID pointageId, CorrectionPointageRequete requete) {
     Pointage pointage =
         pointageRepository
             .findById(pointageId)
             .orElseThrow(() -> new PointageIntrouvableException(pointageId));
+    Instant ancienHorodatage = pointage.getHorodatage();
     UUID corrigePar = CurrentUser.id().orElse(null);
     pointage.corrigerManuellement(requete.nouvelHorodatage(), corrigePar, requete.motif());
+    evenements.publishEvent(
+        new PointageCorrigeEvent(
+            pointageId, ancienHorodatage, requete.nouvelHorodatage(), requete.motif()));
     return pointage;
   }
 
