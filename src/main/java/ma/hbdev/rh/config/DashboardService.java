@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import ma.hbdev.rh.config.DashboardStatsReponse.RepartitionDepartement;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,9 +75,7 @@ public class DashboardService {
       return countEmployesActifsDansDepartement(departementId);
     }
     Long count =
-        jdbc.queryForObject(
-            "SELECT COUNT(*) FROM employes WHERE statut = 'actif'",
-            Long.class);
+        jdbc.queryForObject("SELECT COUNT(*) FROM employes WHERE statut = 'actif'", Long.class);
     return count != null ? count : 0L;
   }
 
@@ -116,8 +113,7 @@ public class DashboardService {
         ORDER BY cnt DESC, d.nom
         """,
         (rs, rowNum) ->
-            new RepartitionDepartement(
-                rs.getString("id"), rs.getString("nom"), rs.getLong("cnt")));
+            new RepartitionDepartement(rs.getString("id"), rs.getString("nom"), rs.getLong("cnt")));
   }
 
   private long countCandidaturesEnCours() {
