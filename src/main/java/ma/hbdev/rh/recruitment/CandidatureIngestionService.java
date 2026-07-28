@@ -120,7 +120,8 @@ class CandidatureIngestionService {
                 SourceCandidature.email,
                 fichier != null ? fichier.id() : null,
                 statutInitial,
-                referenceSourceImport));
+                referenceSourceImport,
+                corps));
 
     evenements.publishEvent(new CandidatureModifieEvent(candidature.getId(), "ingestion"));
     declencherAnalyse(candidature, fichier, offreCorrespondante, null);
@@ -176,7 +177,8 @@ class CandidatureIngestionService {
                   MotsClesUtils.versListe(offre.getMotsClesRequis()))
               : null;
       AnalyseResultat resultat =
-          cvAnalysisProvider.analyser(ressourceCv, fichier.typeMime(), contexte);
+          cvAnalysisProvider.analyser(
+              ressourceCv, fichier.typeMime(), contexte, candidature.getMessageCandidat());
       AnalyseIa analyse =
           analyseIaRepository.save(
               new AnalyseIa(

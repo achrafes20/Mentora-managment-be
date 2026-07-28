@@ -52,8 +52,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-changeme_dev_jwt_secret_must_be_at_least_64_chars_long_x}
       FILE_STORAGE_PATH: ${FILE_STORAGE_PATH:-/data/uploads}
       FILE_MAX_SIZE_MB: ${FILE_MAX_SIZE_MB:-10}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-oss-20b:free}
       INTERNAL_WEBHOOK_SECRET: ${INTERNAL_WEBHOOK_SECRET:-}
       MATTERMOST_BASE_URL: ${MATTERMOST_BASE_URL:-}
       MATTERMOST_BOT_TOKEN: ${MATTERMOST_BOT_TOKEN:-}

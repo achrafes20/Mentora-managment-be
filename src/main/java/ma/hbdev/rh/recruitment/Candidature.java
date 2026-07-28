@@ -74,6 +74,11 @@ class Candidature {
   @Column(name = "source_import_reference", columnDefinition = "TEXT")
   private String sourceImportReference;
 
+  // Corps de l'e-mail de candidature (au-delà du CV) — informations que le candidat écrit
+  // directement dans le message (disponibilité, motivation...), jamais extraites du CV lui-même.
+  @Column(name = "message_candidat", columnDefinition = "TEXT")
+  private String messageCandidat;
+
   @Column(name = "cree_le", insertable = false, updatable = false)
   private Instant creeLe;
 
@@ -89,7 +94,8 @@ class Candidature {
       SourceCandidature source,
       UUID cvFichierId,
       StatutCandidature statutInitial,
-      String sourceImportReference) {
+      String sourceImportReference,
+      String messageCandidat) {
     this.offreId = offreId;
     this.nom = nom;
     this.prenom = prenom;
@@ -100,6 +106,7 @@ class Candidature {
     this.cvFichierId = cvFichierId;
     this.statut = statutInitial;
     this.sourceImportReference = sourceImportReference;
+    this.messageCandidat = messageCandidat;
   }
 
   void changerStatut(StatutCandidature nouveauStatut) {
@@ -196,6 +203,10 @@ class Candidature {
 
   String getSourceImportReference() {
     return sourceImportReference;
+  }
+
+  String getMessageCandidat() {
+    return messageCandidat;
   }
 
   Instant getCreeLe() {

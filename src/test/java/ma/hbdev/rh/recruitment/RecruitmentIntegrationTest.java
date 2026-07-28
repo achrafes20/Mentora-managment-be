@@ -196,6 +196,25 @@ class RecruitmentIntegrationTest {
         .andExpect(jsonPath("$.data.statut").value("recu"));
   }
 
+  // Le corps de l'e-mail (au-delà du CV) était déjà transmis par n8n mais jamais persisté avant
+  // cette session — un candidat peut y écrire des infos absentes du CV (disponibilité...).
+  @Test
+  void persisteEtRestitueLeCorpsDeLEmailDeCandidature() throws Exception {
+    creerOffre("Développeur Backend", List.of("Java"));
+
+    mockMvc
+        .perform(
+            multipart("/api/recruitment/ingest")
+                .header("X-Internal-Webhook-Secret", SECRET_WEBHOOK)
+                .param("emailExpediteur", "message@test.ma")
+                .param("sujet", "Candidature Développeur Backend")
+                .param("corps", "Disponible dès septembre, motivé par le poste."))
+        .andExpect(status().isCreated())
+        .andExpect(
+            jsonPath("$.data.messageCandidat")
+                .value("Disponible dès septembre, motivé par le poste."));
+  }
+
   @Test
   void reingestionAvecNouveauCvChaineLancienneAnalyse() throws Exception {
     creerOffre("Développeur Mobile", List.of("Kotlin"));
@@ -442,7 +461,7 @@ class RecruitmentIntegrationTest {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.statut").value("en_attente"));
 
-    // Sans analyse IA (pas de clé Gemini en test), la candidature n'a pas de mots-clés extraits —
+    // Sans analyse IA (pas de clé API en test), la candidature n'a pas de mots-clés extraits —
     // la réactivation automatique (EF-REC-12) ne peut donc pas matcher. On vérifie ici seulement
     // que la création d'une nouvelle offre compatible ne casse rien et que la candidature reste
     // consultable en 'en_attente' (dégradation gracieuse EF-REC-05 respectée de bout en bout).

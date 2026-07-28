@@ -77,9 +77,9 @@ app:
   # --- shared/ai (CvAnalysisProvider, EF-REC-04) ---
   # Clé vide -> NoopCvAnalysisProvider enregistré à la place (dégradation gracieuse, EF-REC-05).
   ai:
-    gemini:
-      api-key: ${GEMINI_API_KEY:}
-      model: ${GEMINI_MODEL:gemini-2.0-flash}
+    openrouter:
+      api-key: ${OPENROUTER_API_KEY:}
+      model: ${OPENROUTER_MODEL:openai/gpt-oss-20b:free}
   # --- Sécurité (NFR-SEC) : constantes techniques fixées au déploiement, jamais admin-éditables
   # en libre-service (cf. décision T4.B2 du 2026-07-24, avancement-projet.md). ---
   security:

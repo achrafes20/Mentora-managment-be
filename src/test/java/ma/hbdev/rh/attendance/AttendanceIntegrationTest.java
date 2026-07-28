@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.sql.Timestamp;
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.UUID;
@@ -440,6 +441,142 @@ class AttendanceIntegrationTest {
       assertThat(feuille.getRow(3).getCell(3).getStringCellValue()).isEqualTo("Absence");
       assertThat(feuille.getRow(4).getCell(3).getStringCellValue()).isEqualTo("Congé");
     }
+  }
+
+  // EF-ATT-06 : correction manuelle d'un pointage par un Admin, avec traçabilité (NFR-SEC-03).
+  @Test
+  void corrigeManuellementUnPointageEtJournaliseLAudit() throws Exception {
+    UUID employeId = creerEmployeAvecQrCode("Correction", "correction@hbdev.ma", "0600000003");
+
+    // Un seul pointage réel disponible côté applicatif : le scan kiosque (toujours Instant.now()).
+    // On corrige ensuite son horodatage, cas d'usage EF-ATT-06 (oubli de scan -> mauvaise heure
+    // retenue par erreur, à rectifier).
+    String valeurQr =
+        jdbcTemplate.queryForObject(
+            "select valeur from qr_codes where employe_id = ? and actif = true",
+            String.class,
+            employeId);
+    String scanReq =
+        objectMapper.writeValueAsString(new ScanRequete(valeurQr, TypeScanPointage.entree));
+    String resScan =
+        mockMvc
+            .perform(
+                post("/api/kiosque/scan").contentType(MediaType.APPLICATION_JSON).content(scanReq))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String pointageId = objectMapper.readTree(resScan).at("/data/id").asText();
+
+    Instant nouvelHorodatage =
+        LocalDate.now().atTime(8, 45).atZone(ZoneId.of("Africa/Casablanca")).toInstant();
+    String requeteCorrection =
+        """
+        {"nouvelHorodatage":"%s","motif":"Oubli de scan a l'arrivee, corrige sur justificatif"}
+        """
+            .formatted(nouvelHorodatage);
+
+    // Manager -> interdit, réservé à l'Admin (EF-ATT-06).
+    mockMvc
+        .perform(
+            post("/api/pointages/{id}/corriger", pointageId)
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requeteCorrection))
+        .andExpect(status().isForbidden());
+
+    // Motif vide -> rejeté (traçabilité obligatoire).
+    mockMvc
+        .perform(
+            post("/api/pointages/{id}/corriger", pointageId)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"nouvelHorodatage":"%s","motif":""}
+                    """
+                        .formatted(nouvelHorodatage)))
+        .andExpect(status().isBadRequest());
+
+    // Pointage inconnu -> 404.
+    mockMvc
+        .perform(
+            post("/api/pointages/{id}/corriger", UUID.randomUUID())
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requeteCorrection))
+        .andExpect(status().isNotFound());
+
+    // Admin -> corrige avec succès.
+    mockMvc
+        .perform(
+            post("/api/pointages/{id}/corriger", pointageId)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requeteCorrection))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.corrigeManuellement").value(true))
+        .andExpect(
+            jsonPath("$.data.motifCorrection")
+                .value("Oubli de scan a l'arrivee, corrige sur justificatif"));
+
+    // Traçabilité NFR-SEC-03 : un événement d'audit append-only, associé au bon pointage.
+    Integer nombreEvenements =
+        jdbcTemplate.queryForObject(
+            "select count(*) from journal_audit where entite_id = ?::uuid and action = ?",
+            Integer.class,
+            pointageId,
+            "pointage.corrige_manuellement");
+    assertThat(nombreEvenements).isEqualTo(1);
+  }
+
+  private UUID creerEmployeAvecQrCode(String nom, String email, String telephone) throws Exception {
+    String reqDept = "{\"nom\":\"RH %s\",\"managerId\":null}".formatted(nom);
+    String resDept =
+        mockMvc
+            .perform(
+                post("/api/departements")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqDept))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String deptId = objectMapper.readTree(resDept).at("/data/id").asText();
+
+    String reqEmp =
+        """
+        {
+          "nom": "%s",
+          "prenom": "Employe",
+          "email": "%s",
+          "telephone": "%s",
+          "poste": "Dev",
+          "departementId": "%s",
+          "dateEmbauche": "2025-01-01",
+          "typeContrat": "CDI"
+        }
+        """
+            .formatted(nom, email, telephone, deptId);
+    String resEmp =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqEmp))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID employeId = UUID.fromString(objectMapper.readTree(resEmp).at("/data/id").asText());
+
+    mockMvc
+        .perform(
+            post("/api/pointages/qr-code/generer/" + employeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk());
+
+    return employeId;
   }
 
   private int compterNotificationsManager(UUID managerId) {
