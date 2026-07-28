@@ -50,7 +50,14 @@ in `docs/02-diagrams-README.md`, database rationale in
 - **Frontend:** React + Vite + TypeScript. Node 22+ (see `.nvmrc`/
   `engines` in `rh-frontend/package.json`; also what `ci.yml` and the
   `dev`-stage Dockerfile pin).
-- **Workflows:** n8n. **AI:** Gemini behind an interface (see below).
+- **Workflows:** n8n. **AI:** OpenRouter (free-tier text model, default
+  `openai/gpt-oss-20b:free`) behind an interface (see below). Decision
+  (2026-07-28): replaces Gemini — Gemini's free tier is hard-gated at a
+  quota of 0 on every account/project tried, and enabling billing (Google's
+  documented fix) isn't possible without a payment method. CVs are
+  extracted to plain text server-side (PDFBox/POI, already dependencies)
+  before being sent — OpenRouter's free models are text-only, not native
+  multimodal file readers like Gemini was.
 - **Local dev:** `docker compose up` from `rh-backend/` (backend hot
   reload via DevTools, frontend via Vite HMR, Mailpit catches all
   outgoing mail).
@@ -96,8 +103,9 @@ in `docs/02-diagrams-README.md`, database rationale in
    listeners (in-app always created, Mattermost attempt independent —
    EF-NOTIF-01/06); sensitive actions → audit listener (NFR-SEC-03).
 6. **AI vendor is quarantined** behind `shared/ai`'s `CvAnalysisProvider`
-   interface. Feature code never mentions Gemini. The app must start and
-   degrade gracefully without an API key (EF-REC-05).
+   interface. Feature code never mentions the vendor by name (OpenRouter).
+   The app must start and degrade gracefully without an API key
+   (EF-REC-05).
 7. **n8n is transport only.** IMAP polling, cron pings, SMTP sends. All
    business logic (normalization, dedup, J-3/J-15 rules) lives in the
    backend. n8n workflows are versioned as JSON in

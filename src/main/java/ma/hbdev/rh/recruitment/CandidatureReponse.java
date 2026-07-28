@@ -16,6 +16,7 @@ public record CandidatureReponse(
     String statut,
     Instant dateIngestion,
     Instant dateArchivage,
+    String messageCandidat,
     AnalyseIaReponse derniereAnalyse) {
 
   static CandidatureReponse depuis(Candidature candidature) {
@@ -33,6 +34,7 @@ public record CandidatureReponse(
         candidature.getStatut().name(),
         candidature.getDateIngestion(),
         candidature.getDateArchivage(),
+        candidature.getMessageCandidat(),
         analyse != null ? AnalyseIaReponse.depuis(analyse) : null);
   }
 }
