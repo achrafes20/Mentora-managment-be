@@ -6,7 +6,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
+import ma.hbdev.rh.auth.UserService;
 import ma.hbdev.rh.employee.EmployeModifieEvent;
 import ma.hbdev.rh.employee.EmployeReponse;
 import ma.hbdev.rh.employee.EmployeService;
@@ -18,6 +20,7 @@ class SurveillancePlanifieeServiceTest {
 
   private NotificationPlanifieeRepository repository;
   private EmployeService employeService;
+  private UserService userService;
   private SurveillancePlanifieeService service;
 
   @BeforeEach
@@ -30,9 +33,13 @@ class SurveillancePlanifieeServiceTest {
     RestClient restClient = mock(RestClient.class);
     when(restClientBuilder.build()).thenReturn(restClient);
 
+    // Les alertes partent vers les comptes Admin actifs, lus en base au moment du balayage.
+    userService = mock(UserService.class);
+    when(userService.emailsAdminsActifs()).thenReturn(List.of("admin-test@hbdev.ma"));
+
     service =
         new SurveillancePlanifieeService(
-            repository, employeService, restClientBuilder, "http://localhost:5678");
+            repository, employeService, restClientBuilder, userService, "http://localhost:5678");
   }
 
   @Test

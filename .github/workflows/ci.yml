@@ -3,46 +3,116 @@ name: CI
 on:
   push:
     branches: [main]
+    # La suite d'intégration monte un PostgreSQL réel (Testcontainers) : inutile de la
+    # déclencher pour une modification de documentation seule.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
 
 permissions:
   contents: read
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - run: ./mvnw spotless:check
-      - run: ./mvnw checkstyle:check
-      - run: ./mvnw verify
-
-  trivy:
+    name: Build, style et tests (JDK 21)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
+      # Nécessaire au rapport de tests ci-dessous : il publie un "check run" pour
+      # annoter directement les lignes des tests en échec sur la Pull Request.
+      checks: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Récupération du code
+        uses: actions/checkout@v4
+
+      - name: Installation du JDK 21 (Temurin) + cache Maven
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-      # Pre-populate ~/.m2 so Trivy's Java POM analyzer resolves the parent/BOM
-      # chain (spring-boot-starter-parent, spring-data-bom, ...) from the local
-      # cache instead of hitting Maven Central directly, which rate-limits
-      # GitHub-hosted runner IPs (429, 30 min block).
-      - run: ./mvnw -B dependency:go-offline -q
-      - uses: aquasecurity/trivy-action@master
+
+      - name: Vérification du formatage (Spotless)
+        run: ./mvnw spotless:check
+
+      - name: Vérification du style (Checkstyle)
+        run: ./mvnw checkstyle:check
+
+      - name: Tests unitaires et d'intégration (Testcontainers, PostgreSQL 14)
+        run: ./mvnw verify
+
+      - name: Rapport de tests (annotations PR + récapitulatif)
+        # if: always() -> on veut le rapport SURTOUT quand les tests échouent.
+        # require_tests: false -> ne pas échouer une seconde fois si le job s'est
+        # arrêté avant les tests (violation Spotless/Checkstyle, aucun rapport produit).
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: '**/target/surefire-reports/TEST-*.xml'
+          check_name: 'Résultats des tests backend'
+          detailed_summary: true
+          include_passed: false
+          require_tests: false
+
+  trivy:
+    name: Scan de vulnérabilités des dépendances (Trivy)
+    runs-on: ubuntu-latest
+    # Pas de security-events: write — cette permission ne sert qu'à téléverser un
+    # rapport SARIF vers l'onglet Security, ce qui exige GitHub Advanced Security sur
+    # un dépôt privé (non budgété, cf. ai-instructions.md §CI/CD). Le scan publie donc
+    # son résultat dans le récapitulatif du run.
+    permissions:
+      contents: read
+    steps:
+      - name: Récupération du code
+        uses: actions/checkout@v4
+
+      - name: Installation du JDK 21 (Temurin) + cache Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Pré-remplit ~/.m2 pour que l'analyseur de POM de Trivy résolve la chaîne
+      # parent/BOM (spring-boot-starter-parent, spring-data-bom, ...) depuis le cache
+      # local plutôt qu'en attaquant Maven Central, qui limite le débit des IP des
+      # runners GitHub (429, blocage 30 min).
+      - name: Pré-remplissage du cache Maven
+        run: ./mvnw -B dependency:go-offline -q
+
+      - name: Scan des dépendances Maven
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scanners: vuln
           severity: CRITICAL,HIGH
+          # Même politique que le scan d'image de release.yml : une CVE sans correctif
+          # publié n'est pas actionnable, la faire échouer bloquerait les merges sans
+          # qu'on puisse rien y faire. Une seule politique pour les deux workflows.
+          ignore-unfixed: true
           exit-code: '1'
+          format: table
+          output: trivy-dependances.txt
+
+      - name: Publication du résultat dans le récapitulatif du run
+        if: always()
+        run: |
+          {
+            echo "## Scan de vulnérabilités — dépendances Maven"
+            echo
+            echo "Politique : \`CRITICAL,HIGH\`, \`ignore-unfixed: true\` (les CVE sans correctif publié sont ignorées)."
+            echo
+            if [ -s trivy-dependances.txt ]; then
+              echo '```'
+              cat trivy-dependances.txt
+              echo '```'
+            else
+              echo "Aucune vulnérabilité CRITICAL/HIGH corrigeable détectée."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

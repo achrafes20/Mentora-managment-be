@@ -6,6 +6,7 @@ import ma.hbdev.rh.employee.EmployeReponse;
 import ma.hbdev.rh.employee.EmployeService;
 import ma.hbdev.rh.shared.file.FichierUploade;
 import ma.hbdev.rh.shared.file.FileStorageService;
+import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.mail.RestClientFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -24,6 +25,7 @@ class DocumentRhService {
   private final FileStorageService fileStorageService;
   private final RestClient restClient;
   private final String webhookUrl;
+  private final String apiBaseUrl;
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
 
   DocumentRhService(
@@ -32,7 +34,8 @@ class DocumentRhService {
       CertificatGenerator certificatGenerator,
       FileStorageService fileStorageService,
       RestClient.Builder restClientBuilder,
-      @Value("${n8n.webhook.url:http://localhost:5678}") String n8nBaseUrl,
+      @Value("${app.n8n.base-url:http://localhost:5678}") String n8nBaseUrl,
+      @Value("${app.api-base-url:http://localhost:8080}") String apiBaseUrl,
       NotificationPlanifieeRepository notificationPlanifieeRepository) {
     this.envoiDocumentRepository = envoiDocumentRepository;
     this.employeService = employeService;
@@ -41,7 +44,8 @@ class DocumentRhService {
     this.restClient =
         RestClientFactory.buildWithTimeouts(
             restClientBuilder, Duration.ofSeconds(5), Duration.ofSeconds(10));
-    this.webhookUrl = n8nBaseUrl + "/webhook/notify-email";
+    this.webhookUrl = MailService.urlWebhookNotifyEmail(n8nBaseUrl);
+    this.apiBaseUrl = apiBaseUrl.replaceAll("/+$", "");
     this.notificationPlanifieeRepository = notificationPlanifieeRepository;
   }
 
@@ -146,8 +150,10 @@ class DocumentRhService {
           "L'adresse e-mail de l'employé est requise pour envoyer ce document.");
     }
 
-    // Lien de téléchargement (url de base api)
-    String lienTelechargement = "http://localhost:8080/api/fichiers/" + fichier.id();
+    // Lien de téléchargement. L'URL publique de l'API vient de la configuration
+    // (app.api-base-url) : en dur, le lien serait inutilisable dès que le destinataire
+    // n'est pas sur le poste du serveur.
+    String lienTelechargement = apiBaseUrl + "/api/fichiers/" + fichier.id();
     String messageFinal = corps + "\n\nTélécharger le document : " + lienTelechargement;
 
     // Envoi via n8n

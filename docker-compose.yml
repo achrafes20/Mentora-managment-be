@@ -50,6 +50,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev_only}
       SERVER_PORT: 8080
       JWT_SECRET: ${JWT_SECRET:-changeme_dev_jwt_secret_must_be_at_least_64_chars_long_x}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8080}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
       FILE_STORAGE_PATH: ${FILE_STORAGE_PATH:-/data/uploads}
       FILE_MAX_SIZE_MB: ${FILE_MAX_SIZE_MB:-10}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -63,7 +67,10 @@ services:
       MATTERMOST_READ_TIMEOUT_MS: ${MATTERMOST_READ_TIMEOUT_MS:-5000}
       NOTIFICATIONS_ARCHIVAGE_CRON: ${NOTIFICATIONS_ARCHIVAGE_CRON:-0 15 2 * * *}
       DELEGATIONS_EXPIRATION_CRON: ${DELEGATIONS_EXPIRATION_CRON:-0 30 2 * * *}
-      N8N_WEBHOOK_URL: http://n8n:5678
+      DOCUMENTS_SURVEILLANCE_CRON: ${DOCUMENTS_SURVEILLANCE_CRON:-0 0 3 * * *}
+      # Origine du service n8n vue depuis le backend (réseau Docker). Distincte de la
+      # N8N_WEBHOOK_URL du service n8n ci-dessous, qui est son URL publique à lui.
+      N8N_BASE_URL: ${N8N_BASE_URL:-http://n8n:5678}
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:

@@ -4,12 +4,15 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import ma.hbdev.rh.auth.UserService;
 import ma.hbdev.rh.employee.EmployeModifieEvent;
 import ma.hbdev.rh.employee.EmployeReponse;
 import ma.hbdev.rh.employee.EmployeService;
+import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.mail.RestClientFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -20,6 +23,7 @@ class SurveillancePlanifieeService {
 
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
   private final EmployeService employeService;
+  private final UserService userService;
   private final RestClient restClient;
   private final String webhookUrl;
 
@@ -27,13 +31,15 @@ class SurveillancePlanifieeService {
       NotificationPlanifieeRepository notificationPlanifieeRepository,
       EmployeService employeService,
       RestClient.Builder restClientBuilder,
-      @Value("${n8n.webhook.url:http://localhost:5678}") String n8nBaseUrl) {
+      UserService userService,
+      @Value("${app.n8n.base-url:http://localhost:5678}") String n8nBaseUrl) {
     this.notificationPlanifieeRepository = notificationPlanifieeRepository;
     this.employeService = employeService;
+    this.userService = userService;
     this.restClient =
         RestClientFactory.buildWithTimeouts(
             restClientBuilder, Duration.ofSeconds(5), Duration.ofSeconds(10));
-    this.webhookUrl = n8nBaseUrl + "/webhook/notify-email";
+    this.webhookUrl = MailService.urlWebhookNotifyEmail(n8nBaseUrl);
   }
 
   @EventListener
@@ -74,11 +80,48 @@ class SurveillancePlanifieeService {
     }
   }
 
+  /**
+   * EF-DOC-12/13/14 : déclencheur automatique du balayage, une fois par jour.
+   *
+   * <p>Sans lui, {@link #executerSurveillance()} n'était appelable qu'à la main via {@code POST
+   * /api/internal/surveillance/run} — les notifications J-3 / J-15 de fin de contrat étaient donc
+   * planifiées en base mais jamais envoyées.
+   *
+   * <p>Choix du mécanisme : {@code @Scheduled} Spring plutôt qu'un 4ᵉ workflow n8n, pour rejoindre
+   * le mécanisme déjà majoritaire dans le backend ({@code AnomalieService}, {@code
+   * DelegationService}, {@code NotificationService}) et éviter qu'une fonctionnalité RH dépende de
+   * la disponibilité de n8n. L'endpoint HTTP reste en place pour les rejeux manuels.
+   *
+   * <p>{@code zone} explicite (Africa/Casablanca) : le Maroc suspend l'heure d'été pendant le
+   * Ramadan, on ne se repose jamais sur le fuseau par défaut de la JVM.
+   */
+  @Scheduled(cron = "${app.documents.surveillance-cron:0 0 3 * * *}", zone = "Africa/Casablanca")
+  void balayageQuotidien() {
+    executerSurveillance();
+  }
+
   public void executerSurveillance() {
     LocalDate aujourdHui = LocalDate.now();
     List<NotificationPlanifiee> aTraiter =
         notificationPlanifieeRepository.findByStatutAndDateEcheanceLessThanEqual(
             StatutNotificationPlanifiee.planifiee, aujourdHui);
+
+    if (aTraiter.isEmpty()) {
+      return;
+    }
+
+    // Destinataires lus en base à chaque balayage : le compte Admin est la source de vérité
+    // de sa propre adresse, il n'y a donc rien à tenir à jour en configuration.
+    List<String> destinataires = userService.emailsAdminsActifs();
+    if (destinataires.isEmpty()) {
+      // Ne pas marquer les notifications comme envoyées : sans destinataire, rien n'est parti.
+      // Elles restent "planifiee" et repartiront au prochain balayage, une fois un Admin actif.
+      System.err.println(
+          "Surveillance des fins de contrat : aucun compte Admin actif, "
+              + aTraiter.size()
+              + " notification(s) laissée(s) en attente.");
+      return;
+    }
 
     for (NotificationPlanifiee notif : aTraiter) {
       try {
@@ -135,7 +178,9 @@ class SurveillancePlanifieeService {
           }
         }
 
-        envoyerEmailViaWebhook("admin@hbdev.ma", sujet, message);
+        for (String destinataire : destinataires) {
+          envoyerEmailViaWebhook(destinataire, sujet, message);
+        }
       } catch (Exception e) {
         System.err.println(
             "Erreur de traitement de la notification " + notif.getId() + ": " + e.getMessage());
