@@ -3,13 +3,16 @@ package ma.hbdev.rh.auth;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.security.JwtService;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -27,6 +30,8 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>POST /api/auth/forgot-password – EF-AUTH-06
  *   <li>POST /api/auth/reset-password – EF-AUTH-07/08
  *   <li>GET /api/auth/me – profil de l'utilisateur connecté
+ *   <li>PATCH /api/auth/me/email, /api/auth/me/password – modification de ses propres identifiants,
+ *       en libre-service
  * </ul>
  */
 @RestController
@@ -90,5 +95,31 @@ public class AuthController {
             .findByEmail(email)
             .orElseThrow(() -> new AuthException("Utilisateur introuvable"));
     return ResponseEntity.ok(ApiResponse.ok(UserResponse.fromUser(user)));
+  }
+
+  /**
+   * Modification de son propre e-mail. Révoque toutes les sessions actives, y compris celle en
+   * cours : une reconnexion avec le nouvel e-mail est nécessaire.
+   */
+  @PatchMapping("/me/email")
+  @Operation(summary = "Modifier son propre e-mail")
+  public ResponseEntity<ApiResponse<Void>> changerEmail(
+      @Valid @RequestBody ChangeEmailRequest request) {
+    UUID userId = CurrentUser.id().orElseThrow(() -> new AuthException("Authentification requise"));
+    authService.changeEmail(userId, request);
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  /**
+   * Modification de son propre mot de passe (mot de passe actuel exigé). Révoque toutes les
+   * sessions actives, y compris celle en cours.
+   */
+  @PatchMapping("/me/password")
+  @Operation(summary = "Modifier son propre mot de passe")
+  public ResponseEntity<ApiResponse<Void>> changerMotDePasse(
+      @Valid @RequestBody ChangePasswordRequest request) {
+    UUID userId = CurrentUser.id().orElseThrow(() -> new AuthException("Authentification requise"));
+    authService.changePassword(userId, request);
+    return ResponseEntity.ok(ApiResponse.ok());
   }
 }

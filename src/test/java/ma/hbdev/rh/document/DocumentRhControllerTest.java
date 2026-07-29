@@ -54,6 +54,7 @@ class DocumentRhServiceTest {
             fileStorageService,
             builder,
             "http://localhost:5678",
+            "http://localhost:8080",
             notificationPlanifieeRepository);
   }
 

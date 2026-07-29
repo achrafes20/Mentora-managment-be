@@ -56,6 +56,30 @@ spring:
 
 # --- Custom App Configurations ---
 app:
+  # URL publique de l'application (frontend), utilisée pour construire les liens
+  # envoyés par e-mail — réinitialisation de mot de passe (EF-AUTH-06) notamment.
+  # Sans cette valeur, les liens pointeraient vers le poste du serveur, pas vers
+  # l'application déployée. À renseigner impérativement hors dev.
+  base-url: ${APP_BASE_URL:http://localhost:5173}
+  # URL publique de l'API, telle qu'un destinataire d'e-mail doit pouvoir la joindre
+  # depuis l'extérieur. Distincte de base-url : en production les deux peuvent être
+  # identiques (nginx relaie /api/ vers le backend), mais en dev le serveur Vite
+  # (5173) ne relaie rien — l'API se joint directement sur 8080. D'où deux variables.
+  # Sert aux liens de téléchargement des documents RH envoyés par e-mail (EF-DOC).
+  api-base-url: ${API_BASE_URL:http://localhost:8080}
+  # --- JWT (NFR-SEC-01) ---
+  # Le secret DOIT être surchargé par environnement : la valeur par défaut ci-dessous
+  # n'est là que pour un premier lancement local, elle est publique (dans Git).
+  jwt:
+    secret: ${JWT_SECRET:changeme_dev_jwt_secret_must_be_at_least_64_chars_long_x}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  # --- n8n (transport only : webhooks, cron, SMTP) ---
+  # ORIGINE de n8n uniquement (schéma + hôte + port), jamais une URL de webhook complète :
+  # le chemin est ajouté par le code (MailService.urlWebhookNotifyEmail). Propriété unique —
+  # elle remplace n8n.webhook.url et app.n8n.webhook-url, qui coexistaient avec des
+  # sémantiques différentes selon le service appelant.
+  n8n:
+    base-url: ${N8N_BASE_URL:http://localhost:5678}
   mattermost:
     base-url: ${MATTERMOST_BASE_URL:}
     bot-token: ${MATTERMOST_BOT_TOKEN:}
@@ -99,12 +123,17 @@ app:
     reactivation:
       seuil-score: ${RECRUITMENT_REACTIVATION_SEUIL_SCORE:70}
       fenetre-mois: ${RECRUITMENT_REACTIVATION_FENETRE_MOIS:6}
-  # --- Documents RH (EF-DOC-02/13/14) : surveillance planifiée, pas encore consommé par le code
-  # (module document/T4.A1 pas encore implémenté) — valeurs prêtes pour quand il le sera. ---
+  # --- Documents RH (EF-DOC-02/13/14) : surveillance des fins de contrat. ---
   documents:
     delai-notification-fin-stage-jours: ${DOCUMENTS_DELAI_FIN_STAGE_JOURS:3}
     delai-notification-fin-cdd-jours: ${DOCUMENTS_DELAI_FIN_CDD_JOURS:15}
     delai-relance-fin-cdd-jours: ${DOCUMENTS_DELAI_RELANCE_FIN_CDD_JOURS:3}
+    # EF-DOC-12/13/14 : balayage quotidien des notifications planifiées arrivées à échéance
+    # (03h00, heure de Casablanca). Voir SurveillancePlanifieeService#balayageQuotidien.
+    surveillance-cron: ${DOCUMENTS_SURVEILLANCE_CRON:0 0 3 * * *}
+    # Pas de variable pour le destinataire des alertes de fin de contrat : elles partent
+    # vers le(s) compte(s) Admin actif(s) lu(s) en base. Le compte Admin est déjà la
+    # source de vérité de son adresse — la dupliquer en configuration la ferait diverger.
 
 # --- Serveur ---
 server:
@@ -128,6 +157,16 @@ springdoc:
 # Seul /actuator/health est exposé sur HTTP (jamais /env, /beans, etc. — fuite d'info NFR-SEC).
 # show-details: never -> un appelant anonyme voit juste UP/DOWN, jamais l'état du DataSource
 # (adresse, erreur de connexion). SecurityConfig.PUBLIC_PATHS n'ouvre que ce chemin précis.
+#
+# probes.enabled: true -> expose /actuator/health/liveness et /actuator/health/readiness,
+# les deux sondes distinctes attendues par Kubernetes (cf. docs/04-deploiement.md §2.3).
+# Elles restent le MÊME endpoint Actuator ("health") : `EndpointRequest.to("health")` dans
+# SecurityConfig les couvre déjà, aucune règle de sécurité à ajouter.
+#   - liveness  = livenessState seul, JAMAIS la base : une panne DB ne doit pas faire
+#                 redémarrer le pod en boucle (le redémarrage ne répare pas la DB).
+#   - readiness = readinessState + db : un pod qui n'atteint plus PostgreSQL ne peut pas
+#                 servir de trafic utile, on le retire du Service le temps que ça revienne.
+#                 (Le groupe readiness par défaut n'inclut PAS la DB — d'où l'include explicite.)
 management:
   endpoints:
     web:
@@ -136,6 +175,13 @@ management:
   endpoint:
     health:
       show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
 
 # --- Logging ---
 logging:

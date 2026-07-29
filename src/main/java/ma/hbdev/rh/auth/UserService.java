@@ -38,6 +38,26 @@ public class UserService {
   }
 
   /**
+   * Adresses e-mail des comptes Admin actifs — destinataires des alertes internes envoyées par
+   * l'application elle-même (surveillance des fins de contrat, EF-DOC-12/13/14).
+   *
+   * <p>Lecture en base plutôt qu'une adresse en configuration : le compte Admin est déjà la source
+   * de vérité, et une variable d'environnement dupliquant son e-mail finirait par diverger dès que
+   * l'Admin change d'adresse depuis l'application.
+   *
+   * <p>Renvoie une liste (et non une adresse unique) pour rester correct si un second compte Admin
+   * est créé un jour, sans que l'appelant ait à changer.
+   */
+  @Transactional(readOnly = true)
+  public List<String> emailsAdminsActifs() {
+    return userRepository
+        .findByRoleAndStatut(RoleUtilisateur.admin, StatutActifInactif.actif)
+        .stream()
+        .map(User::getEmail)
+        .toList();
+  }
+
+  /**
    * EF-AUTH-11/12 : comptes Manager actifs uniquement — jamais les comptes Admin ni les champs de
    * {@link #findAll()} non nécessaires à un sélecteur (picker manager pour transfert employé,
    * assignation d'entretien...). Volontairement plus étroit que {@link #findAll()} : accessible à

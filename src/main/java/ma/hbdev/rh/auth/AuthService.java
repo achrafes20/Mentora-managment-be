@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>EF-AUTH-02 à 04 : Gestion du verrouillage (5 tentatives, délai configurable)
  *   <li>EF-AUTH-05 : Logout (révocation de la session)
  *   <li>EF-AUTH-06 à 08 : Réinitialisation de mot de passe (via n8n/Mailpit)
+ *   <li>Modification de ses propres e-mail et mot de passe, en libre-service, une fois connecté
  * </ul>
  */
 @Service
@@ -45,6 +46,12 @@ public class AuthService {
 
   @Value("${app.security.lockout.delay-minutes:30}")
   private int delaiDeverrouillageMinutes;
+
+  // EF-AUTH-06 : base des liens envoyés par e-mail. Doit pointer vers le frontend tel que
+  // l'utilisateur y accède (APP_BASE_URL) — une valeur en dur enverrait un lien inutilisable
+  // dès que l'application n'est plus consultée depuis le poste du serveur.
+  @Value("${app.base-url:http://localhost:5173}")
+  private String appBaseUrl;
 
   /**
    * EF-AUTH-01 : Authentifie un utilisateur et retourne un JWT. EF-AUTH-02/03/04 : Gère le
@@ -142,7 +149,8 @@ public class AuthService {
               reset.setExpireLe(Instant.now().plusSeconds(3600)); // 1 heure
               passwordResetRepository.save(reset);
 
-              String resetLink = "http://localhost:5173/reset-password?token=" + rawToken;
+              String resetLink =
+                  appBaseUrl.replaceAll("/+$", "") + "/reset-password?token=" + rawToken;
               String subject = "[Mentora] Réinitialisation de votre mot de passe";
               String message =
                   "Bonjour "
@@ -193,7 +201,86 @@ public class AuthService {
     reset.setUtilise(true);
     passwordResetRepository.save(reset);
 
-    // Révocation de toutes les sessions actives (sécurité)
+    revoquerSessionsActives(user);
+
+    log.info("Mot de passe réinitialisé pour : {}", user.getEmail());
+  }
+
+  /**
+   * Modification de son propre e-mail, en libre-service.
+   *
+   * <p>Pas de mot de passe exigé ici (contrairement à {@link #changePassword}) — décision produit :
+   * un seul compte Admin en pratique, écran accessible seulement une fois déjà authentifié.
+   *
+   * <p>Révoque toutes les sessions actives, y compris celle qui a fait la demande : le jeton JWT
+   * porte l'ancien e-mail en tant que sujet ({@link ma.hbdev.rh.shared.security.JwtService}), il
+   * cesserait de résoudre vers ce compte ({@code /api/auth/me} notamment). Une reconnexion avec le
+   * nouvel e-mail émet un jeton à jour — plus simple et plus sûr que faire porter ce changement par
+   * un jeton déjà émis.
+   */
+  @Transactional
+  public void changeEmail(UUID userId, ChangeEmailRequest request) {
+    User user =
+        userRepository.findById(userId).orElseThrow(() -> new AuthException("Session invalide."));
+
+    if (request.nouvelEmail().equalsIgnoreCase(user.getEmail())) {
+      throw new IllegalArgumentException("Le nouvel e-mail doit être différent de l'actuel.");
+    }
+
+    userRepository
+        .findByEmail(request.nouvelEmail())
+        .ifPresent(
+            autre -> {
+              throw new IllegalArgumentException(
+                  "Cet e-mail est déjà utilisé par un autre compte.");
+            });
+
+    user.setEmail(request.nouvelEmail());
+    user.setModifieLe(Instant.now());
+    userRepository.save(user);
+
+    revoquerSessionsActives(user);
+
+    log.info("E-mail de compte modifié vers : {}", user.getEmail());
+  }
+
+  /**
+   * Modification de son propre mot de passe, en libre-service — exige le mot de passe actuel.
+   *
+   * <p>Révoque toutes les sessions actives : même motif de sécurité que {@link #resetPassword} — un
+   * mot de passe qui vient de fuiter ne doit pas rester valide sur une session déjà ouverte
+   * ailleurs.
+   */
+  @Transactional
+  public void changePassword(UUID userId, ChangePasswordRequest request) {
+    User user =
+        userRepository.findById(userId).orElseThrow(() -> new AuthException("Session invalide."));
+
+    if (!passwordEncoder.matches(request.motDePasseActuel(), user.getMotDePasseHash())) {
+      throw new AuthException("Mot de passe actuel incorrect.");
+    }
+
+    if (!passwordPolicy.valide(request.nouveauMotDePasse())) {
+      throw new AuthException(
+          "Le nouveau mot de passe ne respecte pas la politique de sécurité "
+              + "(min. 10 caractères, majuscule, minuscule, chiffre).");
+    }
+
+    user.setMotDePasseHash(passwordEncoder.encode(request.nouveauMotDePasse()));
+    user.setModifieLe(Instant.now());
+    userRepository.save(user);
+
+    revoquerSessionsActives(user);
+
+    log.info("Mot de passe de compte modifié pour : {}", user.getEmail());
+  }
+
+  /**
+   * Révoque toutes les sessions actives d'un utilisateur. Factorisé ici car dupliqué trois fois
+   * dans cette classe (réinitialisation, changement d'e-mail, changement de mot de passe) — même
+   * geste de sécurité à chaque changement d'identifiant.
+   */
+  private void revoquerSessionsActives(User user) {
     sessionRepository
         .findByUserAndRevoqueLeIsNull(user)
         .forEach(
@@ -201,8 +288,6 @@ public class AuthService {
               session.setRevoqueLe(Instant.now());
               sessionRepository.save(session);
             });
-
-    log.info("Mot de passe réinitialisé pour : {}", user.getEmail());
   }
 
   // ---------- méthodes privées ----------

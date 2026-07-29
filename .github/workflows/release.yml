@@ -8,30 +8,54 @@ on:
 
 jobs:
   build-and-scan:
+    name: Build et scan de l'image backend
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Récupération du code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+      - name: Installation de Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      - name: Build de l'image Docker
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
+          # Aucun registre n'est encore configuré : l'image est construite et scannée
+          # localement dans le runner, jamais publiée. Étape de push à ajouter (GHCR,
+          # tag sha-<court>) — cf. docs/04-deploiement.md §2.1.
           push: false
           load: true
           tags: mentora-backend:${{ github.sha }}, mentora-backend:latest
 
-      - name: Run Trivy vulnerability scanner
+      - name: Scan de vulnérabilités de l'image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'mentora-backend:${{ github.sha }}'
           format: 'table'
+          output: 'trivy-image.txt'
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+
+      - name: Publication du résultat dans le récapitulatif du run
+        if: always()
+        run: |
+          {
+            echo "## Scan de vulnérabilités — image backend"
+            echo
+            echo "Image : \`mentora-backend:${{ github.sha }}\` (construite localement, non publiée)."
+            echo
+            echo "Politique : \`CRITICAL,HIGH\`, \`ignore-unfixed: true\`, types \`os,library\`."
+            echo
+            if [ -s trivy-image.txt ]; then
+              echo '```'
+              cat trivy-image.txt
+              echo '```'
+            else
+              echo "Aucune vulnérabilité CRITICAL/HIGH corrigeable détectée."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
