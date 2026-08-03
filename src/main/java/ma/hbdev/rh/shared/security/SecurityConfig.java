@@ -37,12 +37,19 @@ public class SecurityConfig {
     "/api/auth/login",
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
-    "/api/kiosque/**",
+    // NFR-UX-02 : endpoints appareil du kiosque, sans session JWT — /scan et
+    // /activation/statut exigent un jeton d'appareil vérifié en base (KiosqueActivationService),
+    // /activation/verifier échange un code contre ce jeton. Volontairement listés un par un plutôt
+    // que "/api/kiosque/**" : la gestion des codes (/api/kiosque/activations/**,
+    // KiosqueActivationController) exige elle une session JWT Admin/délégué et ne doit pas passer
+    // ici.
+    "/api/kiosque/scan",
+    "/api/kiosque/activation/statut",
+    "/api/kiosque/activation/verifier",
     "/api/fichiers/**",
-    // Appelés par n8n (jamais par un utilisateur connecté) — protégés par InternalWebhookGuard
-    // (secret partagé en en-tête), pas par une session JWT. EF-REC-02/EF-REC-12.
+    // Appelé par n8n (jamais par un utilisateur connecté) — protégé par InternalWebhookGuard
+    // (secret partagé en en-tête), pas par une session JWT. EF-REC-02.
     "/api/recruitment/ingest",
-    "/api/recruitment/candidatures/archiver-expirees",
     "/api/internal/surveillance/**",
     "/v3/api-docs/**",
     "/swagger-ui/**",
@@ -102,7 +109,11 @@ public class SecurityConfig {
         Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(
         Arrays.asList(
-            "Authorization", "Content-Type", "Cache-Control", "X-Internal-Webhook-Secret"));
+            "Authorization",
+            "Content-Type",
+            "Cache-Control",
+            "X-Internal-Webhook-Secret",
+            "X-Kiosque-Device-Token"));
     configuration.setExposedHeaders(Arrays.asList("Authorization"));
     configuration.setAllowCredentials(true);
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

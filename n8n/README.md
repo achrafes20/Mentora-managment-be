@@ -13,11 +13,30 @@ jamais exportés ni committés** — chaque dev les recrée localement une fois
 |----------------------------------|---------------------------------|-------------------------------------------|--------------------------------------------|
 | `ZljnpSfmg1POyS7P.json` — *Webhook vers SMTP (Mailpit)* | Webhook `POST /webhook/notify-email` (body : `to`, `subject`, `message`) | Socle T0.B3 — valide la chaîne export/import et sert de canal e-mail de référence pour toutes les EF qui enverront un e-mail (reset mot de passe EF-AUTH, rejet candidature EF-REC-14, certificats EF-DOC-07/11, etc.) | Credential SMTP nommé `Mailpit (dev)` → host `mailpit`, port `1025`, SSL/TLS désactivé, pas d'auth |
 | `T3B1RecrutementImapIngest001.json` — *IMAP vers ingestion recrutement* | Déclencheur IMAP (nouvel e-mail reçu) → `POST /api/recruitment/ingest` | EF-REC-02/03 (T3.B1) | Credential IMAP nommé `IMAP Recrutement (dev)` (host/port/user/password de la boîte de test — voir « Boîte mail de recrutement » ci-dessous) + credential Header Auth nommé `Recrutement Webhook Secret (dev)` (en-tête `X-Internal-Webhook-Secret`, valeur = `INTERNAL_WEBHOOK_SECRET` du `.env` backend) |
-| `T3B1RecrutementArchivageCron001.json` — *Cron archivage candidatures en attente* | Cron quotidien (3h) → `POST /api/recruitment/candidatures/archiver-expirees` | EF-REC-12, fenêtre de rétention (T3.B1) | Même credential Header Auth `Recrutement Webhook Secret (dev)` que ci-dessus |
 
-*(Ce tableau grossira à chaque nouveau workflow ajouté en Phase 1+ : cron
-surveillance documents EF-DOC-12→14, etc. Une ligne par fichier de
-`n8n/workflows/`.)*
+*(Ce tableau grossira à chaque nouveau workflow de transport ajouté —
+webhook/IMAP uniquement, plus aucun cron : voir note ci-dessous. Une ligne
+par fichier de `n8n/workflows/`.)*
+
+> **Cron archivage candidatures retiré (2026-08-03).** L'archivage EF-REC-12
+> (candidatures "En attente" au-delà de la fenêtre de rétention) tournait via
+> `T3B1RecrutementArchivageCron001.json` (cron quotidien 3h → `POST
+> /api/recruitment/candidatures/archiver-expirees`, protégé par
+> `InternalWebhookGuard`). C'était le seul des 5 traitements planifiés du
+> backend à encore dépendre de n8n — les 4 autres (`AnomalieService`,
+> `DelegationService`, `NotificationService`,
+> `SurveillancePlanifieeService`) sont déjà des `@Scheduled` Spring. Migré au
+> même mécanisme : `CandidatureService#archivageQuotidien` (cron
+> `app.recruitment.archivage-cron` / `RECRUITMENT_ARCHIVAGE_CRON`, défaut
+> `0 0 3 * * *`, zone `Africa/Casablanca`). Le déclenchement manuel reste
+> disponible via `POST /api/candidatures/archiver-expirees`, désormais en
+> RBAC Admin normal (session JWT) et non plus via secret partagé. n8n ne
+> porte donc plus aucun cron, uniquement du transport webhook/IMAP —
+> `ai-instructions.md` règle 7 mise à jour en conséquence. Sur une instance
+> n8n existante : désactiver et supprimer manuellement ce workflow dans l'UI
+> (le fichier JSON a été retiré de `n8n/workflows/`, `make n8n-import` ne le
+> recréera pas, mais un import précédent reste actif tant qu'il n'est pas
+> désactivé à la main).
 
 ### Boîte mail de recrutement (dev)
 
@@ -34,13 +53,11 @@ sont partagées Taha↔Achraf hors dépôt (même principe que
 par la vraie adresse recrutement de HB Développement — seul le credential
 IMAP change, aucun code.
 
-Le credential `X-Internal-Webhook-Secret` (Header Auth) protège aussi les
-deux endpoints ci-dessus contre un appel externe non autorisé — ce ne sont
-ni des endpoints utilisateur (pas de session JWT), ni ouverts sans contrôle
-comme `/api/kiosque/**` (cf. `InternalWebhookGuard` côté backend). Sa
-valeur doit être identique à `INTERNAL_WEBHOOK_SECRET` dans le `.env`
-backend, et sera réutilisée par les futurs pings cron n8n de T4.A1
-(surveillance fin de stage/CDD).
+Le credential `X-Internal-Webhook-Secret` (Header Auth) protège aussi
+l'endpoint ci-dessus contre un appel externe non autorisé — ce n'est ni un
+endpoint utilisateur (pas de session JWT), ni ouvert sans contrôle (cf.
+`InternalWebhookGuard` côté backend). Sa valeur doit être identique à
+`INTERNAL_WEBHOOK_SECRET` dans le `.env` backend.
 
 ## Premier lancement (à faire une fois par dev, par volume Docker)
 
