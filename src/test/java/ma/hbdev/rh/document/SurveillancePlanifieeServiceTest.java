@@ -58,6 +58,7 @@ class SurveillancePlanifieeServiceTest {
             null,
             LocalDate.now(),
             "STAGIAIRE",
+            null,
             LocalDate.now().plusDays(10),
             null,
             null,
@@ -71,5 +72,41 @@ class SurveillancePlanifieeServiceTest {
     service.gererEvenementEmploye(new EmployeModifieEvent(employeId, "creation"));
 
     verify(repository).save(any(NotificationPlanifiee.class));
+  }
+
+  // Reproduit le bug corrigé (EF-DOC-12) : dateFinContratPrevue est réservé aux CDD (CHECK en
+  // base + validation service), donc toujours null pour un STAGIAIRE en usage réel — avant le
+  // correctif, la branche stage lisait ce champ et ne pouvait donc jamais créer de notification.
+  @Test
+  void testGererEvenementEmploye_StageSansDateFinStage_neCreeAucuneNotification() {
+    UUID employeId = UUID.randomUUID();
+    EmployeReponse employe =
+        new EmployeReponse(
+            employeId,
+            "Nom",
+            "Prenom",
+            "email",
+            "tel",
+            "poste",
+            UUID.randomUUID(),
+            "dept",
+            null,
+            LocalDate.now(),
+            "STAGIAIRE",
+            null,
+            null,
+            null,
+            null,
+            "actif",
+            null,
+            null,
+            null,
+            null);
+    when(employeService.recuperer(employeId)).thenReturn(employe);
+
+    service.gererEvenementEmploye(new EmployeModifieEvent(employeId, "creation"));
+
+    org.mockito.Mockito.verify(repository, org.mockito.Mockito.never())
+        .save(any(NotificationPlanifiee.class));
   }
 }

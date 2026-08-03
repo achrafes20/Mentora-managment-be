@@ -13,4 +13,5 @@ public record EmployeModificationRequete(
     String poste,
     @NotNull LocalDate dateEmbauche,
     @NotNull TypeContratEmploye typeContrat,
-    LocalDate dateFinContratPrevue) {}
+    LocalDate dateFinContratPrevue,
+    LocalDate dateFinStagePrevue) {}

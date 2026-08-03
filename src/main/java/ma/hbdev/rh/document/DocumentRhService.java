@@ -80,7 +80,7 @@ class DocumentRhService {
             employe.prenom(),
             employe.nom(),
             employe.dateEmbauche(),
-            employe.dateFinContratPrevue(),
+            employe.dateFinStagePrevue(),
             employe.poste());
 
     return traiterEnvoi(

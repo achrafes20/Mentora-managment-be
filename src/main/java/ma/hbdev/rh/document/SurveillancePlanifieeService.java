@@ -65,18 +65,20 @@ class SurveillancePlanifieeService {
       return; // CDI etc.
     }
 
-    LocalDate dateFin = employe.dateFinContratPrevue();
-    if (dateFin == null) {
-      return;
-    }
-
     if (typeContrat.startsWith("STAGIAIRE")) {
-      creerNotification(
-          employe.id(), TypeFinSurveillee.fin_stage, soustraireJoursOuvres(dateFin, 3));
+      LocalDate dateFinStage = employe.dateFinStagePrevue();
+      if (dateFinStage != null) {
+        creerNotification(
+            employe.id(), TypeFinSurveillee.fin_stage, soustraireJoursOuvres(dateFinStage, 3));
+      }
     } else if ("CDD".equals(typeContrat)) {
-      creerNotification(
-          employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFin, 15));
-      creerNotification(employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFin, 3));
+      LocalDate dateFinCdd = employe.dateFinContratPrevue();
+      if (dateFinCdd != null) {
+        creerNotification(
+            employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFinCdd, 15));
+        creerNotification(
+            employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFinCdd, 3));
+      }
     }
   }
 
@@ -139,7 +141,7 @@ class SurveillancePlanifieeService {
                   + " (poste: "
                   + employe.poste()
                   + ") se termine le "
-                  + employe.dateFinContratPrevue()
+                  + employe.dateFinStagePrevue()
                   + " (J-3).\n\nVeuillez préparer le certificat de stage.\n\nCordialement,\nMentora RH";
           notif.marquerEnvoyee();
         } else if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_cdd) {
