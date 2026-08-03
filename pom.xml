@@ -37,7 +37,7 @@
         <maven-checkstyle-plugin.version>3.5.0</maven-checkstyle-plugin.version>
         <poi.version>5.3.0</poi.version>
         <commons-csv.version>1.11.0</commons-csv.version>
-        <pdfbox.version>3.0.3</pdfbox.version>
+        <pdfbox.version>3.0.7</pdfbox.version>
     </properties>
 
     <!-- ================================================================
@@ -148,6 +148,14 @@
             <artifactId>pdfbox</artifactId>
             <version>${pdfbox.version}</version>
         </dependency>
+        <!-- xmpbox : dépendance transitive d'openhtmltopdf-pdfbox, redéclarée ici avec la même
+             version pour éviter toute ambiguïté de résolution Maven (les deux dépendances sont
+             au même niveau, "premier déclaré gagne" sinon). -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>xmpbox</artifactId>
+            <version>${pdfbox.version}</version>
+        </dependency>
 
         <!-- === Lombok — Boilerplate Reduction === -->
         <dependency>
@@ -161,6 +169,32 @@
             <groupId>com.github.librepdf</groupId>
             <artifactId>openpdf</artifactId>
             <version>2.0.3</version>
+        </dependency>
+
+        <!-- === openhtmltopdf - Rendu HTML/CSS vers PDF (EF-DOC, certificats stylisés) ===
+             ATTENTION groupId : le groupId historique `com.openhtmltopdf` (Maven Central) est
+             abandonné depuis 2021 à la version 1.0.10, compilée contre PDFBox 2.0.24 — testé en
+             conditions réelles ici et incompatible en dur avec PDFBox 3.x (`PDType1Font` a perdu
+             ses champs statiques standards dans PDFBox 3, remplacés par `Standard14Fonts` ;
+             NoSuchFieldError au runtime, pas à la compilation). Le fork communautaire actif
+             `io.github.openhtmltopdf` (mêmes packages Java `com.openhtmltopdf.*`, donc aucun
+             changement d'import côté code) est sur PDFBox 3.0.7 — aligné avec notre
+             `pdfbox.version` ci-dessus. Ne jamais revenir au groupId `com.openhtmltopdf` tant que
+             le projet reste sur PDFBox 3.x. -->
+        <dependency>
+            <groupId>io.github.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-pdfbox</artifactId>
+            <version>1.1.66</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.pdfbox</groupId>
+                    <artifactId>pdfbox</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.pdfbox</groupId>
+                    <artifactId>xmpbox</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
 

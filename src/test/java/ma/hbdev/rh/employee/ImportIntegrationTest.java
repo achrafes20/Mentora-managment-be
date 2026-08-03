@@ -277,6 +277,8 @@ class ImportIntegrationTest {
                 TypeContratEmploye.CDI,
                 null,
                 null,
+                null,
+                null,
                 null));
 
     String csv1 = "Email,Solde\namine.solde@test.ma,18\n";

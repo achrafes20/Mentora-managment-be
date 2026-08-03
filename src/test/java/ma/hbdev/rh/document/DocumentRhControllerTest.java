@@ -92,13 +92,17 @@ class DocumentRhServiceTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 null));
     when(certificatGenerator.genererCertificatStage(
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any(),
-            org.mockito.ArgumentMatchers.anyString()))
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any()))
         .thenReturn(new byte[] {1, 2, 3});
     when(fileStorageService.televerser(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))

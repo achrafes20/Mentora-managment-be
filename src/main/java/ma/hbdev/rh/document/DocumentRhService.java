@@ -58,7 +58,7 @@ class DocumentRhService {
     UUID employeId = notif.getEmployeId();
     EnvoiDocument envoi;
     if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_stage) {
-      envoi = envoyerCertificatStage(employeId, envoyePar);
+      envoi = envoyerCertificatStage(employeId, null, envoyePar);
     } else {
       envoi = envoyerCertificatTravail(employeId, envoyePar);
     }
@@ -73,7 +73,7 @@ class DocumentRhService {
     return envoi;
   }
 
-  EnvoiDocument envoyerCertificatStage(UUID employeId, UUID envoyePar) {
+  EnvoiDocument envoyerCertificatStage(UUID employeId, String sujetStage, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
     byte[] pdf =
         certificatGenerator.genererCertificatStage(
@@ -81,7 +81,9 @@ class DocumentRhService {
             employe.nom(),
             employe.dateEmbauche(),
             employe.dateFinStagePrevue(),
-            employe.poste());
+            employe.poste(),
+            sujetStage,
+            employe.sexe());
 
     return traiterEnvoi(
         employe,
@@ -100,9 +102,12 @@ class DocumentRhService {
         certificatGenerator.genererCertificatTravail(
             employe.prenom(),
             employe.nom(),
+            employe.cin(),
+            employe.poste(),
+            employe.typeContrat(),
             employe.dateEmbauche(),
             employe.dateDepart(),
-            employe.poste());
+            employe.sexe());
 
     return traiterEnvoi(
         employe,
@@ -111,6 +116,42 @@ class DocumentRhService {
         TypeDocumentRh.certificat_travail,
         "Votre certificat de travail",
         "Bonjour,\n\nVeuillez trouver ci-joint votre certificat de travail suite à votre départ.\n\nCordialement, RH",
+        envoyePar);
+  }
+
+  /**
+   * Attestation de travail — employé encore ACTIF, distincte de {@link #envoyerCertificatTravail}
+   * qui documente un départ. Deux validations propres à ce document (pas de contrainte CHECK
+   * équivalente en base, la table {@code envois_documents} reste générique pour tout {@link
+   * TypeDocumentRh}) :
+   */
+  EnvoiDocument envoyerAttestationTravail(UUID employeId, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    if (!"actif".equals(employe.statut())) {
+      throw new IllegalArgumentException(
+          "L'attestation de travail n'est disponible que pour un employé actif.");
+    }
+    if (!"CDI".equals(employe.typeContrat()) && !"CDD".equals(employe.typeContrat())) {
+      throw new IllegalArgumentException(
+          "L'attestation de travail n'est disponible que pour un employé CDI ou CDD.");
+    }
+    byte[] pdf =
+        certificatGenerator.genererAttestationTravail(
+            employe.prenom(),
+            employe.nom(),
+            employe.cin(),
+            employe.poste(),
+            employe.typeContrat(),
+            employe.dateEmbauche(),
+            employe.sexe());
+
+    return traiterEnvoi(
+        employe,
+        pdf,
+        "attestation_travail.pdf",
+        TypeDocumentRh.attestation_travail,
+        "Votre attestation de travail",
+        "Bonjour,\n\nVeuillez trouver ci-joint votre attestation de travail.\n\nCordialement, RH",
         envoyePar);
   }
 

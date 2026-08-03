@@ -139,6 +139,42 @@ class IdentiteEntrepriseIntegrationTest {
   }
 
   @Test
+  void modifieEtRelitIceRcEtVille() throws Exception {
+    String corps =
+        "{\"raisonSociale\": \"HB Développement\", \"ice\": \"001234567000089\","
+            + " \"rc\": \"12345\", \"ville\": \"Tétouan\"}";
+
+    mockMvc
+        .perform(
+            put("/api/config/identite-entreprise")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(corps)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.ice").value("001234567000089"))
+        .andExpect(jsonPath("$.data.rc").value("12345"))
+        .andExpect(jsonPath("$.data.ville").value("Tétouan"));
+  }
+
+  @Test
+  void modifieEtRelitLeSignataire() throws Exception {
+    String corps =
+        "{\"raisonSociale\": \"HB Développement\", \"signataireNom\": \"Amal Medah\","
+            + " \"signataireFonction\": \"Responsable RH\", \"signataireSexe\": \"FEMME\"}";
+
+    mockMvc
+        .perform(
+            put("/api/config/identite-entreprise")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(corps)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.signataireNom").value("Amal Medah"))
+        .andExpect(jsonPath("$.data.signataireFonction").value("Responsable RH"))
+        .andExpect(jsonPath("$.data.signataireSexe").value("FEMME"));
+  }
+
+  @Test
   void neCreeJamaisUneDeuxiemeLigne() throws Exception {
     String premiere = "{\"raisonSociale\": \"Premier nom\"}";
     String seconde = "{\"raisonSociale\": \"Nom corrige\"}";
@@ -210,6 +246,57 @@ class IdentiteEntrepriseIntegrationTest {
             get("/api/config/identite-entreprise/logo")
                 .header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void televerseEtRecupereLaSignature() throws Exception {
+    MockMultipartFile signature =
+        new MockMultipartFile(
+            "signature",
+            "signature.png",
+            "image/png",
+            "contenu-signature-factice".getBytes(StandardCharsets.UTF_8));
+
+    mockMvc
+        .perform(
+            multipart("/api/config/identite-entreprise/signature")
+                .file(signature)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.signatureFichierId").isNotEmpty());
+
+    mockMvc
+        .perform(
+            get("/api/config/identite-entreprise/signature")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(content().bytes("contenu-signature-factice".getBytes(StandardCharsets.UTF_8)));
+  }
+
+  @Test
+  void refuseLeTelechargementDeLaSignatureQuandAucuneNaEteTeleversee() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/config/identite-entreprise/signature")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void refuseLeTeleversementDeSignatureAuManager() throws Exception {
+    MockMultipartFile signature =
+        new MockMultipartFile(
+            "signature",
+            "signature.png",
+            "image/png",
+            "peu-importe".getBytes(StandardCharsets.UTF_8));
+
+    mockMvc
+        .perform(
+            multipart("/api/config/identite-entreprise/signature")
+                .file(signature)
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isForbidden());
   }
 
   @Test

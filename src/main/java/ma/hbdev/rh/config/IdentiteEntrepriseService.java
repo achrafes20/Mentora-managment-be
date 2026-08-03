@@ -45,6 +45,12 @@ public class IdentiteEntrepriseService {
     entite.setAdresse(requete.adresse());
     entite.setTelephone(requete.telephone());
     entite.setEmail(requete.email());
+    entite.setIce(requete.ice());
+    entite.setRc(requete.rc());
+    entite.setVille(requete.ville());
+    entite.setSignataireNom(requete.signataireNom());
+    entite.setSignataireFonction(requete.signataireFonction());
+    entite.setSignataireSexe(requete.signataireSexe());
     entite.setModifiePar(CurrentUser.id().orElse(null));
     entite.setModifieLe(Instant.now());
     // Le save doit précéder la publication de l'événement : sur la toute première modification,
@@ -74,6 +80,29 @@ public class IdentiteEntrepriseService {
     var metadonnees = fileStorageService.recuperer(logoFichierId);
     var ressource = fileStorageService.charger(logoFichierId);
     return new LogoEntrepriseTelecharge(ressource, metadonnees.typeMime());
+  }
+
+  IdentiteEntrepriseReponse televerserSignature(MultipartFile fichier, UUID televersePar) {
+    IdentiteEntreprise entite = ligneUnique().orElseGet(IdentiteEntreprise::new);
+    var uploade = fileStorageService.televerser(fichier, televersePar);
+    entite.setSignatureFichierId(uploade.id());
+    entite.setModifiePar(televersePar);
+    entite.setModifieLe(Instant.now());
+    IdentiteEntreprise sauvegardee = repository.save(entite);
+    evenements.publishEvent(new IdentiteEntrepriseModifieEvent(sauvegardee.getId()));
+    return IdentiteEntrepriseReponse.depuis(sauvegardee);
+  }
+
+  @Transactional(readOnly = true)
+  SignatureEntrepriseTelecharge recupererSignature() {
+    UUID signatureFichierId =
+        ligneUnique().map(IdentiteEntreprise::getSignatureFichierId).orElse(null);
+    if (signatureFichierId == null) {
+      throw new SignatureEntrepriseIntrouvableException();
+    }
+    var metadonnees = fileStorageService.recuperer(signatureFichierId);
+    var ressource = fileStorageService.charger(signatureFichierId);
+    return new SignatureEntrepriseTelecharge(ressource, metadonnees.typeMime());
   }
 
   private Optional<IdentiteEntreprise> ligneUnique() {

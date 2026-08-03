@@ -263,6 +263,90 @@ class DocumentRhIntegrationTest {
   }
 
   @Test
+  void envoieUneAttestationDeTravailPourUnEmployeActifCdi() throws Exception {
+    UUID employeId = creerEmploye("Attestation", "attestation@hbdev.ma");
+
+    mockMvc
+        .perform(
+            post("/api/documents/employes/{id}/attestation-travail", employeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.typeDocument").value("attestation_travail"))
+        .andExpect(jsonPath("$.data.destinataireEmail").value("attestation@hbdev.ma"));
+
+    assertThat(appelsWebhook.get()).isEqualTo(1);
+  }
+
+  @Test
+  void refuseLAttestationDeTravailPourUnEmployeInactif() throws Exception {
+    UUID employeId = creerEmploye("Inactif", "inactif@hbdev.ma");
+    mockMvc
+        .perform(
+            post("/api/employes/{id}/desactiver", employeId)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motif\":\"demission\",\"dateDepart\":\"2026-01-01\"}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/documents/employes/{id}/attestation-travail", employeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            jsonPath("$.error")
+                .value("L'attestation de travail n'est disponible que pour un employé actif."));
+
+    assertThat(appelsWebhook.get()).isZero();
+  }
+
+  @Test
+  void refuseLAttestationDeTravailPourUnStagiaire() throws Exception {
+    String reqDept = "{\"nom\":\"RH Stagiaire\",\"managerId\":null}";
+    String resDept =
+        mockMvc
+            .perform(
+                post("/api/departements")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqDept))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String deptId = objectMapper.readTree(resDept).at("/data/id").asText();
+
+    String reqEmp =
+        """
+        {"nom":"Stagiaire","prenom":"Employe","email":"stagiaire@hbdev.ma","poste":"Dev",
+         "departementId":"%s","dateEmbauche":"2025-01-01","typeContrat":"STAGIAIRE"}
+        """
+            .formatted(deptId);
+    String resEmp =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqEmp))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID employeId = UUID.fromString(objectMapper.readTree(resEmp).at("/data/id").asText());
+
+    mockMvc
+        .perform(
+            post("/api/documents/employes/{id}/attestation-travail", employeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            jsonPath("$.error")
+                .value(
+                    "L'attestation de travail n'est disponible que pour un employé CDI ou CDD."));
+
+    assertThat(appelsWebhook.get()).isZero();
+  }
+
+  @Test
   void refuseUnCertificatSiLEmployeNAPasDEmail() throws Exception {
     UUID employeId = creerEmploye("SansEmail", null);
 

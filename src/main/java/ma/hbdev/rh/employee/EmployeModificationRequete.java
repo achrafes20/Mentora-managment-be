@@ -14,4 +14,6 @@ public record EmployeModificationRequete(
     @NotNull LocalDate dateEmbauche,
     @NotNull TypeContratEmploye typeContrat,
     LocalDate dateFinContratPrevue,
-    LocalDate dateFinStagePrevue) {}
+    LocalDate dateFinStagePrevue,
+    SexeEmploye sexe,
+    String cin) {}

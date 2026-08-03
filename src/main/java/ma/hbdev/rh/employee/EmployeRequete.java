@@ -30,4 +30,6 @@ public record EmployeRequete(
     // quel comme document employé (EF-EMP-03) à la création, pas de reupload. Le frontend le lit
     // depuis CandidatureReponse.cvFichierId ; le module employé ne connaît jamais la table
     // `candidatures`, seulement l'UUID d'un fichier déjà stocké (ai-instructions.md règle 4).
-    UUID cvFichierId) {}
+    UUID cvFichierId,
+    SexeEmploye sexe,
+    String cin) {}

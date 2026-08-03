@@ -9,6 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -70,10 +71,12 @@ class DocumentRhController {
 
   @PostMapping("/employes/{employeId}/certificat-stage")
   @ResponseStatus(HttpStatus.CREATED)
-  ApiResponse<EnvoiDocumentResponse> envoyerCertificatStage(@PathVariable UUID employeId) {
+  ApiResponse<EnvoiDocumentResponse> envoyerCertificatStage(
+      @PathVariable UUID employeId, @RequestBody(required = false) CertificatStageRequete requete) {
     UUID utilisateurConnecteId = CurrentUser.id().orElse(null);
+    String sujetStage = requete == null ? null : requete.sujetStage();
     EnvoiDocument envoi =
-        documentRhService.envoyerCertificatStage(employeId, utilisateurConnecteId);
+        documentRhService.envoyerCertificatStage(employeId, sujetStage, utilisateurConnecteId);
     return ApiResponse.ok(EnvoiDocumentResponse.depuis(envoi));
   }
 
@@ -83,6 +86,15 @@ class DocumentRhController {
     UUID utilisateurConnecteId = CurrentUser.id().orElse(null);
     EnvoiDocument envoi =
         documentRhService.envoyerCertificatTravail(employeId, utilisateurConnecteId);
+    return ApiResponse.ok(EnvoiDocumentResponse.depuis(envoi));
+  }
+
+  @PostMapping("/employes/{employeId}/attestation-travail")
+  @ResponseStatus(HttpStatus.CREATED)
+  ApiResponse<EnvoiDocumentResponse> envoyerAttestationTravail(@PathVariable UUID employeId) {
+    UUID utilisateurConnecteId = CurrentUser.id().orElse(null);
+    EnvoiDocument envoi =
+        documentRhService.envoyerAttestationTravail(employeId, utilisateurConnecteId);
     return ApiResponse.ok(EnvoiDocumentResponse.depuis(envoi));
   }
 

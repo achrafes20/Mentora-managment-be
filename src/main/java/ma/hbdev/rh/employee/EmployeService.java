@@ -148,7 +148,9 @@ public class EmployeService {
                 requete.typeContrat(),
                 requete.dateFinContratPrevue(),
                 requete.dateFinStagePrevue(),
-                requete.candidatureOrigineId()));
+                requete.candidatureOrigineId(),
+                requete.sexe(),
+                requete.cin()));
     evenements.publishEvent(
         EmployeModifieEvent.creation(
             employe.getId(),
@@ -178,7 +180,9 @@ public class EmployeService {
         requete.dateEmbauche(),
         requete.typeContrat(),
         requete.dateFinContratPrevue(),
-        requete.dateFinStagePrevue());
+        requete.dateFinStagePrevue(),
+        requete.sexe(),
+        requete.cin());
     evenements.publishEvent(new EmployeModifieEvent(id, "modification"));
     return employe;
   }

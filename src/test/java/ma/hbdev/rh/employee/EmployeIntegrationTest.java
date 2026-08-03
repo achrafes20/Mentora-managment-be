@@ -229,6 +229,44 @@ class EmployeIntegrationTest {
   }
 
   @Test
+  void creeUnEmployeAvecSexeEtLeRestitueDansLaReponse() throws Exception {
+    String requete =
+        """
+        {"nom":"Bennani","prenom":"Fatima","email":"fatima.bennani@test.ma",
+         "departementId":"%s","dateEmbauche":"2024-01-15","typeContrat":"CDI","sexe":"FEMME"}
+        """
+            .formatted(departementId);
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requete))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.sexe").value("FEMME"));
+  }
+
+  @Test
+  void creeUnEmployeAvecCinEtLaRestitueDansLaReponse() throws Exception {
+    String requete =
+        """
+        {"nom":"Idrissi","prenom":"Youssef","email":"youssef.idrissi@test.ma",
+         "departementId":"%s","dateEmbauche":"2024-01-15","typeContrat":"CDI","cin":"AB123456"}
+        """
+            .formatted(departementId);
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requete))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.cin").value("AB123456"));
+  }
+
+  @Test
   void refuseUnEmailDejaUtilise() throws Exception {
     mockMvc
         .perform(

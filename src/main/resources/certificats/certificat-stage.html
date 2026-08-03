@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Attestation de stage</title>
+<style>
+  /*
+   * Pas de @import/@font-face : les polices (Source Serif 4, IBM Plex Sans) sont enregistrées
+   * directement côté Java via PdfRendererBuilder.useFont(...) (CertificatHtmlRenderer), à partir
+   * des fichiers statiques instanciés dans src/main/resources/fonts/certificats/. openhtmltopdf
+   * n'a pas besoin (et ne sait pas bien résoudre) un @font-face pointant vers une police
+   * variable chargée par CDN — c'est pour ça que le design ChatGPT d'origine a été adapté.
+   *
+   * Pas de custom properties CSS (--x / var(--x)) non plus : openhtmltopdf ne les supporte pas
+   * (silencieusement ignorées, avec un avertissement en log) — testé en conditions réelles ici.
+   * Couleurs de marque en littéral partout : Encre Marine #1B2A41, Sauge #4A7C6B,
+   * Gris Dossier #D8D4CC, Rose Marque #C92B6A (cf. src/styles/theme.css du frontend).
+   */
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'IBM Plex Sans', Arial, sans-serif;
+    color: #1B2A41;
+    background: #FFFFFF;
+  }
+
+  .page {
+    padding: 2cm;
+  }
+
+  .filet-haut, .filet-bas {
+    height: 3px;
+    background: #4A7C6B;
+    width: 100%;
+  }
+  .filet-haut { margin-bottom: 26px; }
+  .filet-bas { margin-top: 26px; }
+
+  /* En-tête entreprise — table plutôt que flex (non fiable avec openhtmltopdf) */
+  table.entete {
+    width: 100%;
+    border-collapse: collapse;
+    border-bottom: 1px solid #D8D4CC;
+    padding-bottom: 18px;
+    margin-bottom: 34px;
+  }
+  table.entete td {
+    vertical-align: middle;
+    padding-bottom: 18px;
+  }
+  .logo-cellule {
+    width: 130px;
+  }
+  .logo-cellule img {
+    width: 120px;
+  }
+  .coordonnees {
+    font-size: 13px;
+    line-height: 1.55;
+    color: #1B2A41;
+  }
+  .coordonnees .raison-sociale {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 700;
+    font-size: 17px;
+    margin-bottom: 2px;
+  }
+  .coordonnees .adresse,
+  .coordonnees .contact {
+    color: #3D4B5C;
+  }
+
+  .titre-document {
+    text-align: center;
+    margin: 10px 0 42px 0;
+  }
+  .titre-document h1 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 700;
+    font-size: 24px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #1B2A41;
+    margin: 0;
+    padding-bottom: 14px;
+    border-bottom: 2px solid #C92B6A;
+    /* display:inline-block a été essayé en premier : le moteur de layout d'openhtmltopdf
+       mésestime parfois la largeur d'un inline-block avec letter-spacing, ce qui faisait
+       retourner le titre à la ligne au milieu d'un mot. "inline" (bordure sur la ligne de
+       texte, pas sur un bloc) est plus robuste ici et rend identiquement pour un titre
+       court sur une seule ligne. */
+    display: inline;
+  }
+
+  .corps {
+    font-size: 15.5px;
+    line-height: 1.9;
+    /* text-align:justify a été essayé en premier : combiné aux passages en gras à l'intérieur
+       d'un paragraphe justifié, l'ordre d'extraction de texte du PDF généré se retrouvait
+       incorrect à certains endroits (bug d'extraction, pas un bug d'affichage visuel — mais
+       jamais assez de confiance dans le rendu réel sans navigateur de test pour le garder).
+       "left" est plus sûr pour un document dont le texte doit aussi rester correctement
+       extractible (recherche, lecteurs d'écran, copier-coller). */
+    text-align: left;
+  }
+  .corps p {
+    margin: 0 0 22px 0;
+  }
+  .corps strong {
+    font-weight: 700;
+  }
+
+  .sujet-stage-bloc {
+    margin: 6px 0 28px 0;
+    text-align: center;
+  }
+  .sujet-stage {
+    display: inline-block;
+    max-width: 90%;
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 16px;
+    color: #4A7C6B;
+    border: 1px solid #4A7C6B;
+    border-left: 4px solid #C92B6A;
+    background: #EFF4F2;
+    padding: 14px 24px;
+    line-height: 1.6;
+  }
+
+  .lieu-date {
+    margin-top: 8px;
+    font-size: 15px;
+  }
+
+  /* Bloc signature — table alignée à droite plutôt que flex */
+  table.signature-bloc {
+    width: 100%;
+    margin-top: 50px;
+  }
+  table.signature-bloc td {
+    width: 260px;
+    text-align: center;
+  }
+  .espace-signature {
+    height: 90px;
+    border: 1px dashed #D8D4CC;
+    text-align: center;
+    font-size: 11px;
+    color: #9A968C;
+    font-style: italic;
+    padding-top: 38px;
+    margin-bottom: 10px;
+  }
+  .image-signature {
+    height: 90px;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .image-signature img {
+    max-height: 90px;
+    max-width: 100%;
+  }
+  .signature-fonction {
+    font-size: 13px;
+    color: #3D4B5C;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+</style>
+</head>
+<body>
+
+  <div class="page">
+
+    <div class="filet-haut"></div>
+
+    <table class="entete">
+      <tr>
+        <td class="logo-cellule">{{logoImgTag}}</td>
+        <td class="coordonnees">
+          <div class="raison-sociale">{{raisonSociale}}</div>
+          <div class="adresse">{{adresse}}</div>
+          <div class="contact">Tél : {{telephone}} | Email : {{email}}</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="titre-document">
+      <h1>Attestation de stage</h1>
+    </div>
+
+    <div class="corps">
+      <p>
+        {{introSignataire}}
+      </p>
+
+      <p>
+        <strong>{{prenom}} {{nom}}</strong> a effectué un stage au sein de notre entreprise
+        en qualité de <strong>{{poste}}</strong>, du <strong>{{dateEmbauche}}</strong>
+        au <strong>{{dateFin}}</strong>{{introSujet}}
+      </p>
+
+      {{blocSujetStage}}
+
+      <p>
+        Durant cette période, {{pronomEmploye}} a fait preuve de sérieux, d'assiduité
+        et de bonnes qualités professionnelles.
+      </p>
+
+      <p>
+        Cette attestation est délivrée à l'{{interesseEmploye}} pour servir et valoir
+        ce que de droit.
+      </p>
+
+      <p class="lieu-date">
+        Fait le {{dateGeneration}}
+      </p>
+    </div>
+
+    <table class="signature-bloc">
+      <tr>
+        <td></td>
+        <td>
+          {{blocSignature}}
+          <div class="signature-fonction">{{signataireFonctionAffichee}}</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="filet-bas"></div>
+
+  </div>
+
+</body>
+</html>
