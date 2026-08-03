@@ -1,6 +1,7 @@
 package ma.hbdev.rh.attendance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -54,6 +55,7 @@ class AttendanceIntegrationTest {
   @Autowired private UserRepository userRepository;
   @Autowired private PasswordEncoder passwordEncoder;
   @Autowired private PointageService pointageService;
+  @Autowired private AnomalieService anomalieService;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   private String adminToken;
@@ -70,7 +72,8 @@ class AttendanceIntegrationTest {
         """
         truncate table notifications_mattermost, notifications_in_app, journal_audit,
           pointages, anomalies_pointage, qr_codes, mouvements_conges, demandes_administratives,
-          employes, departements, sessions_utilisateur
+          employes, departements, sessions_utilisateur, horaires_reference,
+          plannings_teletravail
         cascade
         """);
     // politique_anomalies (EF-ATT-11) est une donnée de référence seedée par V12, jamais recréée
@@ -586,5 +589,169 @@ class AttendanceIntegrationTest {
             Integer.class,
             managerId);
     return nombre == null ? 0 : nombre;
+  }
+
+  // EF-ATT-04/05 : marquage résolu d'une anomalie, réservé à l'Admin.
+  @Test
+  void marqueUneAnomalieResolueEtLeRefuseAuManager() throws Exception {
+    UUID employeId = creerEmployeAvecQrCode("Resolution", "resolution@hbdev.ma", "0600000004");
+
+    pointageService.enregistrerAnomalieIdempotent(
+        employeId, LocalDate.now(), TypeAnomaliePointage.retard, null, null);
+    UUID anomalieId =
+        jdbcTemplate.queryForObject(
+            "select id from anomalies_pointage where employe_id = ?", UUID.class, employeId);
+
+    // Manager -> interdit (EF-ATT-04, seul l'Admin résout).
+    mockMvc
+        .perform(
+            post("/api/anomalies/{id}/resoudre", anomalieId)
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isForbidden());
+
+    // Anomalie inconnue -> 404.
+    mockMvc
+        .perform(
+            post("/api/anomalies/{id}/resoudre", UUID.randomUUID())
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isNotFound());
+
+    // Admin -> résout avec succès, visible dans le filtre resolue=true.
+    mockMvc
+        .perform(
+            post("/api/anomalies/{id}/resoudre", anomalieId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.resolue").value(true));
+
+    mockMvc
+        .perform(
+            get("/api/anomalies")
+                .header("Authorization", "Bearer " + adminToken)
+                .param("resolue", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].id").value(anomalieId.toString()));
+  }
+
+  // EF-ATT-08/09/10 : CRUD planning télétravail + court-circuit du moteur d'anomalies nocturne
+  // (ai-instructions.md : "un jour de télétravail planifié n'est jamais une absence").
+  @Test
+  void gereLePlanningTeletravailEtCourtCircuiteLaDetectionDAnomalies() throws Exception {
+    // Horaire de référence en vigueur : sans lui, detecterAnomaliesNocturnes() s'arrête avant
+    // même de consulter le planning télétravail (cf. AnomalieService, log "ignorées").
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"08:30:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"17:00:00",
+                     "toleranceMinutes":10,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employeTeletravail =
+        creerEmployeAvecQrCode("Teletravail", "teletravail@hbdev.ma", "0600000005");
+    UUID employeTemoin = creerEmployeAvecQrCode("Temoin", "temoin@hbdev.ma", "0600000006");
+
+    // Planning couvrant tous les jours de la semaine (ouvert, sans dateFin) pour ne pas dépendre
+    // du jour d'exécution réel du test.
+    String reqPlanning =
+        """
+        {"dateDebut":"2020-01-01","dateFin":null,
+         "jours":["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"]}
+        """;
+    String resPlanning =
+        mockMvc
+            .perform(
+                post("/api/employes/{id}/teletravail", employeTeletravail)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqPlanning))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String planningId = objectMapper.readTree(resPlanning).at("/data/id").asText();
+
+    mockMvc
+        .perform(
+            get("/api/employes/{id}/teletravail", employeTeletravail)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].id").value(planningId));
+
+    // Chaque employé "entre" hier sans "sortir" (absence_checkout si rien ne l'empêche) : seul le
+    // témoin (sans planning télétravail) doit finir par être signalé.
+    LocalDate hier = LocalDate.now(ZoneId.of("Africa/Casablanca")).minusDays(1);
+    insererPointageEntreeBackdated(employeTeletravail, hier);
+    insererPointageEntreeBackdated(employeTemoin, hier);
+
+    anomalieService.detecterAnomaliesNocturnes();
+
+    Integer anomaliesTeletravail =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ?",
+            Integer.class,
+            employeTeletravail,
+            hier);
+    assertThat(anomaliesTeletravail).isZero();
+
+    Integer anomaliesTemoin =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ? "
+                + "and type_anomalie = 'absence_checkout'",
+            Integer.class,
+            employeTemoin,
+            hier);
+    assertThat(anomaliesTemoin).isEqualTo(1);
+
+    // Manager -> interdit (CRUD réservé à l'Admin, lecture seule ouverte au Manager).
+    mockMvc
+        .perform(
+            delete("/api/employes/{id}/teletravail/{planningId}", employeTeletravail, planningId)
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            delete("/api/employes/{id}/teletravail/{planningId}", employeTeletravail, planningId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            get("/api/employes/{id}/teletravail", employeTeletravail)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data").isEmpty());
+
+    // Planning déjà supprimé -> 404.
+    mockMvc
+        .perform(
+            delete("/api/employes/{id}/teletravail/{planningId}", employeTeletravail, planningId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isNotFound());
+  }
+
+  // Les scans réels horodatent toujours Instant.now() (kiosque) : impossible de simuler "hier" par
+  // ce chemin. Insertion directe, même principe que la donnée de démo attendance déjà validée en
+  // conditions réelles pour ce projet.
+  private void insererPointageEntreeBackdated(UUID employeId, LocalDate jour) {
+    UUID qrCodeId =
+        jdbcTemplate.queryForObject(
+            "select id from qr_codes where employe_id = ? and actif = true", UUID.class, employeId);
+    UUID horaireId =
+        jdbcTemplate.queryForObject(
+            "select id from horaires_reference order by date_effet desc limit 1", UUID.class);
+    jdbcTemplate.update(
+        "insert into pointages (id, employe_id, qr_code_id, type_scan, horodatage,"
+            + " horaire_reference_id) values (gen_random_uuid(), ?, ?, 'entree', ?, ?)",
+        employeId,
+        qrCodeId,
+        Timestamp.from(jour.atTime(8, 30).atZone(ZoneId.of("Africa/Casablanca")).toInstant()),
+        horaireId);
   }
 }

@@ -276,6 +276,7 @@ class ImportIntegrationTest {
                 LocalDate.of(2022, 1, 1),
                 TypeContratEmploye.CDI,
                 null,
+                null,
                 null));
 
     String csv1 = "Email,Solde\namine.solde@test.ma,18\n";

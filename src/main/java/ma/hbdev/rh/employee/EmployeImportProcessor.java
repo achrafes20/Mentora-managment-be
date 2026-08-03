@@ -122,6 +122,9 @@ class EmployeImportProcessor {
                           dateEmbauche,
                           typeContrat,
                           dateFinContratPrevue,
+                          // EF-DOC-12 : date de fin de stage pas encore un champ mappé par
+                          // l'assistant d'import (T2.B1) — hors périmètre de ce correctif.
+                          null,
                           null,
                           null))
                   .getId();
@@ -149,7 +152,8 @@ class EmployeImportProcessor {
                 poste,
                 dateEmbauche,
                 typeContrat,
-                dateFinContratPrevue));
+                dateFinContratPrevue,
+                null));
         if (!existant.getDepartement().getId().equals(departement.getId())) {
           employeService.transferer(
               entiteId,

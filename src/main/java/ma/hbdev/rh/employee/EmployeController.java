@@ -230,6 +230,11 @@ public class EmployeController {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(ex.getMessage()));
   }
 
+  @ExceptionHandler(DateFinStageInvalideException.class)
+  ResponseEntity<ApiResponse<Void>> gererDateFinStageInvalide(DateFinStageInvalideException ex) {
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(ex.getMessage()));
+  }
+
   @ExceptionHandler(FichierInvalideException.class)
   ResponseEntity<ApiResponse<Void>> gererFichierInvalide(FichierInvalideException ex) {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(ex.getMessage()));

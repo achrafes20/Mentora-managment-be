@@ -55,6 +55,9 @@ class Employe {
   @Column(name = "date_fin_contrat_prevue")
   private LocalDate dateFinContratPrevue;
 
+  @Column(name = "date_fin_stage_prevue")
+  private LocalDate dateFinStagePrevue;
+
   @Column(name = "date_depart")
   private LocalDate dateDepart;
 
@@ -97,6 +100,7 @@ class Employe {
       LocalDate dateEmbauche,
       TypeContratEmploye typeContrat,
       LocalDate dateFinContratPrevue,
+      LocalDate dateFinStagePrevue,
       UUID candidatureOrigineId) {
     this.nom = nom;
     this.prenom = prenom;
@@ -108,6 +112,7 @@ class Employe {
     this.dateEmbauche = dateEmbauche;
     this.typeContrat = typeContrat;
     this.dateFinContratPrevue = dateFinContratPrevue;
+    this.dateFinStagePrevue = dateFinStagePrevue;
     this.candidatureOrigineId = candidatureOrigineId;
   }
 
@@ -119,7 +124,8 @@ class Employe {
       String poste,
       LocalDate dateEmbauche,
       TypeContratEmploye typeContrat,
-      LocalDate dateFinContratPrevue) {
+      LocalDate dateFinContratPrevue,
+      LocalDate dateFinStagePrevue) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -128,6 +134,7 @@ class Employe {
     this.dateEmbauche = dateEmbauche;
     this.typeContrat = typeContrat;
     this.dateFinContratPrevue = dateFinContratPrevue;
+    this.dateFinStagePrevue = dateFinStagePrevue;
   }
 
   void transferer(Departement nouveauDepartement, UUID nouveauManagerId) {
@@ -187,6 +194,10 @@ class Employe {
 
   LocalDate getDateFinContratPrevue() {
     return dateFinContratPrevue;
+  }
+
+  LocalDate getDateFinStagePrevue() {
+    return dateFinStagePrevue;
   }
 
   LocalDate getDateDepart() {

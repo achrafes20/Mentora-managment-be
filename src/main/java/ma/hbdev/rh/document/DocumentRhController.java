@@ -23,14 +23,17 @@ class DocumentRhController {
   private final DocumentRhService documentRhService;
   private final EnvoiDocumentRhRepository envoiDocumentRepository;
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
+  private final SurveillancePlanifieeService surveillancePlanifieeService;
 
   DocumentRhController(
       DocumentRhService documentRhService,
       EnvoiDocumentRhRepository envoiDocumentRepository,
-      NotificationPlanifieeRepository notificationPlanifieeRepository) {
+      NotificationPlanifieeRepository notificationPlanifieeRepository,
+      SurveillancePlanifieeService surveillancePlanifieeService) {
     this.documentRhService = documentRhService;
     this.envoiDocumentRepository = envoiDocumentRepository;
     this.notificationPlanifieeRepository = notificationPlanifieeRepository;
+    this.surveillancePlanifieeService = surveillancePlanifieeService;
   }
 
   @GetMapping("/employes/{employeId}")
@@ -52,6 +55,17 @@ class DocumentRhController {
             .map(NotificationPlanifieeReponse::depuis)
             .toList();
     return ApiResponse.ok(notifs);
+  }
+
+  // Déclenchement manuel du balayage par un Admin authentifié (bouton "Forcer exécution" côté
+  // écran Documents) — distinct de /api/internal/surveillance/run (SurveillanceController), qui
+  // reste réservé au cron n8n via InternalWebhookGuard. Ce secret partagé est documenté comme
+  // n'étant "jamais" destiné à un utilisateur connecté (cf. InternalWebhookGuard) ; il ne doit
+  // donc jamais être embarqué côté frontend, même pour un usage Admin volontaire.
+  @PostMapping("/surveillance/executer")
+  ApiResponse<Void> executerSurveillance() {
+    surveillancePlanifieeService.executerSurveillance();
+    return ApiResponse.ok();
   }
 
   @PostMapping("/employes/{employeId}/certificat-stage")

@@ -36,6 +36,7 @@ public class EmployeService {
           "Date d'embauche",
           "Statut",
           "Date de fin de contrat prévue",
+          "Date de fin de stage prévue",
           "Date de départ");
 
   // EF-EXP-01 : le PDF est une fiche de lecture rapide (roster), pas l'export de référence — se
@@ -131,6 +132,7 @@ public class EmployeService {
   Employe creer(EmployeRequete requete) {
     validerEmailDisponible(requete.email(), null);
     validerDateFinContrat(requete.typeContrat(), requete.dateFinContratPrevue());
+    validerDateFinStage(requete.typeContrat(), requete.dateFinStagePrevue());
     Departement departement = trouverDepartement(requete.departementId());
     Employe employe =
         employeRepository.save(
@@ -145,6 +147,7 @@ public class EmployeService {
                 requete.dateEmbauche(),
                 requete.typeContrat(),
                 requete.dateFinContratPrevue(),
+                requete.dateFinStagePrevue(),
                 requete.candidatureOrigineId()));
     evenements.publishEvent(
         EmployeModifieEvent.creation(
@@ -165,6 +168,7 @@ public class EmployeService {
     Employe employe = trouver(id);
     validerEmailDisponible(requete.email(), employe.getEmail());
     validerDateFinContrat(requete.typeContrat(), requete.dateFinContratPrevue());
+    validerDateFinStage(requete.typeContrat(), requete.dateFinStagePrevue());
     employe.modifier(
         requete.nom(),
         requete.prenom(),
@@ -173,7 +177,8 @@ public class EmployeService {
         requete.poste(),
         requete.dateEmbauche(),
         requete.typeContrat(),
-        requete.dateFinContratPrevue());
+        requete.dateFinContratPrevue(),
+        requete.dateFinStagePrevue());
     evenements.publishEvent(new EmployeModifieEvent(id, "modification"));
     return employe;
   }
@@ -336,6 +341,15 @@ public class EmployeService {
     }
   }
 
+  private void validerDateFinStage(TypeContratEmploye typeContrat, LocalDate dateFinStagePrevue) {
+    boolean estStagiaire =
+        typeContrat == TypeContratEmploye.STAGIAIRE
+            || typeContrat == TypeContratEmploye.STAGIAIRE_REMUNERE;
+    if (!estStagiaire && dateFinStagePrevue != null) {
+      throw new DateFinStageInvalideException();
+    }
+  }
+
   private static String blancVersNull(String valeur) {
     return (valeur == null || valeur.isBlank()) ? null : valeur;
   }
@@ -372,6 +386,7 @@ public class EmployeService {
         texte(employe.getDateEmbauche()),
         texte(employe.getStatut() == null ? null : employe.getStatut().name()),
         texte(employe.getDateFinContratPrevue()),
+        texte(employe.getDateFinStagePrevue()),
         texte(employe.getDateDepart()));
   }
 

@@ -20,6 +20,9 @@ public record EmployeRequete(
     @NotNull LocalDate dateEmbauche,
     @NotNull TypeContratEmploye typeContrat,
     LocalDate dateFinContratPrevue,
+    // EF-DOC-12 : symétrique de dateFinContratPrevue mais réservé aux STAGIAIRE/STAGIAIRE_REMUNERE
+    // — champ dédié car dateFinContratPrevue est contraint aux CDD (CHECK en base + validation).
+    LocalDate dateFinStagePrevue,
     // EF-EMP-05/EF-REC-13 : renseigné par le frontend quand le formulaire "Nouvel employé" a été
     // ouvert depuis une candidature "Embauchée" (?depuisCandidatureId=), sinon null.
     UUID candidatureOrigineId,

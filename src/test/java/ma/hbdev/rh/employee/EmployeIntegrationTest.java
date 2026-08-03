@@ -150,6 +150,20 @@ class EmployeIntegrationTest {
             dateFinContratPrevue == null ? "null" : "\"" + dateFinContratPrevue + "\"");
   }
 
+  private String requeteCreationAvecFinStage(
+      String email, String typeContrat, String dateFinStagePrevue) {
+    return """
+        {"nom":"Dupont","prenom":"Jean","email":"%s","telephone":"0600000000","poste":"Dev",
+         "departementId":"%s","dateEmbauche":"2024-01-15","typeContrat":"%s",
+         "dateFinStagePrevue":%s}
+        """
+        .formatted(
+            email,
+            departementId,
+            typeContrat,
+            dateFinStagePrevue == null ? "null" : "\"" + dateFinStagePrevue + "\"");
+  }
+
   @Test
   void creeListeModifieEtTransfereUnEmploye() throws Exception {
     String reponseCreation =
@@ -250,6 +264,50 @@ class EmployeIntegrationTest {
                 .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requeteCreation("cdi-avec-date@test.ma", "CDI", "2024-12-31")))
+        .andExpect(status().isBadRequest());
+  }
+
+  // EF-DOC-12 : dateFinStagePrevue est le pendant de dateFinContratPrevue pour les stagiaires
+  // (champ dédié — cf. V14 — car dateFinContratPrevue reste réservé aux CDD).
+  @Test
+  void accepteDateFinStageSurStagiaireEtLaRefuseAilleurs() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    requeteCreationAvecFinStage("stagiaire@test.ma", "STAGIAIRE", "2024-08-31")))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.dateFinStagePrevue").value("2024-08-31"));
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    requeteCreationAvecFinStage(
+                        "stagiaire-remunere@test.ma", "STAGIAIRE_REMUNERE", "2024-08-31")))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.dateFinStagePrevue").value("2024-08-31"));
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    requeteCreationAvecFinStage("cdi-avec-fin-stage@test.ma", "CDI", "2024-08-31")))
+        .andExpect(status().isBadRequest());
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    requeteCreationAvecFinStage("cdd-avec-fin-stage@test.ma", "CDD", "2024-08-31")))
         .andExpect(status().isBadRequest());
   }
 

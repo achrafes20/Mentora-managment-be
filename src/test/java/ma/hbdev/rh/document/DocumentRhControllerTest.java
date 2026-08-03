@@ -85,6 +85,7 @@ class DocumentRhServiceTest {
                 java.time.LocalDate.now(),
                 "CDD",
                 java.time.LocalDate.now(),
+                null,
                 java.time.LocalDate.now(),
                 null,
                 "actif",
