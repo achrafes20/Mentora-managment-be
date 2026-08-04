@@ -174,15 +174,12 @@ Le reste scale sans souci : Flyway (verrou géré), JWT stateless (pas de sticky
 
 ## 9. n8n
 
-3 workflows versionnés dans `n8n/workflows/`, importés via `n8n import:workflow --separate --input=n8n/workflows/` :
+2 workflows versionnés dans `n8n/workflows/`, importés via `n8n import:workflow --separate --input=n8n/workflows/` — transport uniquement (webhook/IMAP), plus aucun cron (le dernier, l'archivage recrutement EF-REC-12, est passé en `@Scheduled` backend le 2026-08-03 — voir `n8n/README.md`) :
 
 | Fichier | Rôle |
 |---|---|
-| `T3B1RecrutementImapIngest001.json` | IMAP → `POST /api/recruitment/ingest`. |
-| `T3B1RecrutementArchivageCron001.json` | Cron quotidien 03h00 → `POST /api/recruitment/candidatures/archiver-expirees`. |
+| `T3B1RecrutementImapIngest001.json` | IMAP → `POST /api/recruitment/ingest`. Protégé par `INTERNAL_WEBHOOK_SECRET` (en-tête `X-Internal-Webhook-Secret`). |
 | `ZljnpSfmg1POyS7P.json` | Webhook `/webhook/notify-email` → envoi SMTP (seul chemin de sortie des e-mails). |
-
-Les deux premiers sont protégés par `INTERNAL_WEBHOOK_SECRET` (en-tête `X-Internal-Webhook-Secret`).
 
 - Les credentials (IMAP, SMTP) ne sont **pas** dans l'export — à recréer manuellement dans l'UI n8n au premier déploiement.
 - Les workflows importés sont **désactivés** — à activer manuellement (pas de réactivation auto à l'import).

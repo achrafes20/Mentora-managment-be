@@ -101,6 +101,18 @@ public class CandidatureController {
     return ApiResponse.ok(CandidatureReponse.depuis(candidatureService.validerReactivation(id)));
   }
 
+  // Déclenchement manuel de l'archivage par un Admin authentifié (bouton "Forcer exécution" côté
+  // écran Candidatures) — même principe que DocumentRhController#executerSurveillance. L'exécution
+  // planifiée (tous les jours à 3h, Africa/Casablanca) reste CandidatureService#archivageQuotidien
+  // ;
+  // ceci ne fait que la rejouer à la demande, RBAC normal (pas de secret partagé, contrairement à
+  // l'ancien ping n8n — EF-REC-12, cf. ai-instructions.md règle 7 révisée).
+  @PostMapping("/archiver-expirees")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<Integer> archiverExpirees() {
+    return ApiResponse.ok(candidatureService.archiverExpirees());
+  }
+
   // "inline" (pas "attachment") : même convention que EmployeController.telechargerDocument —
   // laisse le navigateur prévisualiser le PDF/DOCX quand il le peut.
   @GetMapping("/{id}/cv")

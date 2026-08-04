@@ -106,11 +106,19 @@ in `docs/02-diagrams-README.md`, database rationale in
    interface. Feature code never mentions the vendor by name (OpenRouter).
    The app must start and degrade gracefully without an API key
    (EF-REC-05).
-7. **n8n is transport only.** IMAP polling, cron pings, SMTP sends. All
+7. **n8n is transport only.** IMAP polling, webhook relays, SMTP sends. All
    business logic (normalization, dedup, J-3/J-15 rules) lives in the
    backend. n8n workflows are versioned as JSON in
    `rh-backend/n8n/workflows/` (run `make n8n-export` after editing in the
-   UI); credentials are never exported or committed.
+   UI); credentials are never exported or committed. **All scheduled tasks
+   are Spring `@Scheduled` jobs in the backend, never n8n cron triggers**
+   (decision 2026-08-03, closing out the last exception — the recruitment
+   archival job, EF-REC-12 — which used to be the sole n8n cron ping; see
+   `AnomalieService`, `DelegationService`, `NotificationService`,
+   `SurveillancePlanifieeService`, `CandidatureService#archivageQuotidien`).
+   A manual-trigger endpoint under normal Admin RBAC (Bearer session, no
+   shared secret) may still exist alongside a scheduled job for on-demand
+   reruns — that is not an exception to this rule, since n8n isn't involved.
 
 ## Database rules
 

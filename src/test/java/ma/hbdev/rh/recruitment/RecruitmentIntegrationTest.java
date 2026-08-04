@@ -476,8 +476,7 @@ class RecruitmentIntegrationTest {
   }
 
   @Test
-  void archivageExpireesEstProtegeParLeSecretEtNaffectePasLesCandidaturesRecentes()
-      throws Exception {
+  void archivageExpireesEstReserveAuxAdminsEtNaffectePasLesCandidaturesRecentes() throws Exception {
     creerOffre("Offre archivage", List.of("Test"));
     mockMvc
         .perform(
@@ -487,14 +486,18 @@ class RecruitmentIntegrationTest {
                 .param("sujet", "Non lié"))
         .andExpect(status().isCreated());
 
+    mockMvc.perform(post("/api/candidatures/archiver-expirees")).andExpect(status().isForbidden());
+
     mockMvc
-        .perform(post("/api/recruitment/candidatures/archiver-expirees"))
+        .perform(
+            post("/api/candidatures/archiver-expirees")
+                .header("Authorization", "Bearer " + managerToken))
         .andExpect(status().isForbidden());
 
     mockMvc
         .perform(
-            post("/api/recruitment/candidatures/archiver-expirees")
-                .header("X-Internal-Webhook-Secret", SECRET_WEBHOOK))
+            post("/api/candidatures/archiver-expirees")
+                .header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data").value(0));
   }

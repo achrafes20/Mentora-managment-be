@@ -162,6 +162,21 @@ public class DelegationService {
     return delegationActiveEffectivePourUtilisateurCourant().map(DelegationReponse::depuis);
   }
 
+  /**
+   * Vrai si la délégation désignée par {@code delegationId} est encore effectivement active — même
+   * filtre que {@link #delegationActiveEffectivePourUtilisateurCourant()} ci-dessous, mais pour une
+   * délégation connue par id plutôt que "celle de l'utilisateur courant". Consommé par
+   * KiosqueActivationService (NFR-UX-02) : un code d'activation kiosque émis par un délégué reste
+   * valide seulement pendant la fenêtre de sa délégation, sans mécanisme d'expiration séparé.
+   */
+  @Transactional(readOnly = true)
+  public boolean estActive(UUID delegationId) {
+    return delegationRepository
+        .findById(delegationId)
+        .map(DelegationApprobation::estEffectivementActive)
+        .orElse(false);
+  }
+
   private Optional<DelegationApprobation> delegationActiveEffectivePourUtilisateurCourant() {
     UUID courant = CurrentUser.id().orElse(null);
     if (courant == null) {
