@@ -372,7 +372,15 @@ class AttendanceIntegrationTest {
     }
     LocalDate mercredi = lundi.plusDays(2);
     LocalDate jeudi = lundi.plusDays(3);
+    LocalDate vendredi = lundi.plusDays(4);
     ZoneId zone = ZoneId.of("Africa/Casablanca");
+
+    // Vendredi : jour férié déclaré (EF-ATT-04/EF-EXP-02), sans scan ni planning -> exclu de
+    // l'export au même titre qu'un week-end, pas compté comme "Absence".
+    jdbcTemplate.update(
+        "insert into jours_feries(id, date_ferie, libelle) values (gen_random_uuid(), ?, ?)",
+        vendredi,
+        "Jour férié test");
 
     // Lundi : scan réel entrée/sortie -> "Présent". Mardi : couvert par un planning de
     // télétravail -> "Télétravail" malgré l'absence de scan. Mercredi : ni scan ni télétravail ->
@@ -427,7 +435,7 @@ class AttendanceIntegrationTest {
                     .param("format", "xlsx")
                     .param("employeId", employeId.toString())
                     .param("debut", lundi.toString())
-                    .param("fin", jeudi.toString()))
+                    .param("fin", vendredi.toString()))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -435,7 +443,8 @@ class AttendanceIntegrationTest {
 
     try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
       var feuille = classeur.getSheetAt(0);
-      // En-tête + 4 jours (lundi/mardi/mercredi/jeudi, aucun dimanche dans la plage).
+      // En-tête + 4 jours (lundi/mardi/mercredi/jeudi) : vendredi est férié, donc exclu malgré
+      // qu'il soit dans la plage demandée — pas de 5e ligne.
       assertThat(feuille.getLastRowNum()).isEqualTo(4);
       assertThat(feuille.getRow(1).getCell(3).getStringCellValue()).isEqualTo("Présent");
       // 09h-17h = 8h, moins la pause midi d'1h déduite systématiquement (EF-ATT-03) = 7h00.
@@ -683,13 +692,16 @@ class AttendanceIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].id").value(planningId));
 
-    // Chaque employé "entre" hier sans "sortir" (absence_checkout si rien ne l'empêche) : seul le
-    // témoin (sans planning télétravail) doit finir par être signalé.
-    LocalDate hier = LocalDate.now(ZoneId.of("Africa/Casablanca")).minusDays(1);
+    // Chaque employé "entre" un jour ouvré donné sans "sortir" (absence_checkout si rien ne
+    // l'empêche) : seul le témoin (sans planning télétravail) doit finir par être signalé. Un
+    // lundi fixe dans le passé plutôt que "hier" (LocalDate.now() - 1) : le moteur exclut
+    // désormais explicitement les week-ends (EF-ATT-04), donc un test réellement exécuté un lundi
+    // aurait "hier" tombant un dimanche et ne détecterait jamais rien.
+    LocalDate hier = LocalDate.of(2024, 1, 8); // lundi
     insererPointageEntreeBackdated(employeTeletravail, hier);
     insererPointageEntreeBackdated(employeTemoin, hier);
 
-    anomalieService.detecterAnomaliesNocturnes();
+    anomalieService.detecterAnomaliesPourJournee(hier);
 
     Integer anomaliesTeletravail =
         jdbcTemplate.queryForObject(
@@ -734,6 +746,103 @@ class AttendanceIntegrationTest {
             delete("/api/employes/{id}/teletravail/{planningId}", employeTeletravail, planningId)
                 .header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isNotFound());
+  }
+
+  // EF-ATT-04 : un jour férié déclaré n'est pas un jour ouvré — un employé sans scan ce jour-là ne
+  // doit générer aucune anomalie, au même titre qu'un week-end.
+  @Test
+  void exclutLesJoursFeriesDeLaDetectionDAnomalies() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"08:30:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"17:00:00",
+                     "toleranceMinutes":10,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employe = creerEmployeAvecQrCode("Ferie", "ferie@hbdev.ma", "0600000007");
+
+    LocalDate ferie = LocalDate.of(2024, 1, 9); // mardi
+    jdbcTemplate.update(
+        "insert into jours_feries(id, date_ferie, libelle) values (gen_random_uuid(), ?, ?)",
+        ferie,
+        "Jour férié test");
+
+    // Entrée sans sortie : aurait généré une anomalie absence_checkout n'importe quel jour ouvré.
+    insererPointageEntreeBackdated(employe, ferie);
+
+    anomalieService.detecterAnomaliesPourJournee(ferie);
+
+    Integer anomalies =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ?",
+            Integer.class,
+            employe,
+            ferie);
+    assertThat(anomalies).isZero();
+  }
+
+  // Tableau de bord Présence : taux de couverture sur 30 jours + répartition des anomalies.
+  @Test
+  void afficheLeTableauDeBordPresence() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"08:30:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"17:00:00",
+                     "toleranceMinutes":10,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employeId = creerEmployeAvecQrCode("Dashboard", "dashboard@hbdev.ma", "0600000008");
+
+    // Jour ouvré récent garanti (dans la fenêtre glissante de 30 jours, jamais un week-end),
+    // indépendant du jour d'exécution réel du test.
+    LocalDate jourTest = LocalDate.now(ZoneId.of("Africa/Casablanca")).minusDays(1);
+    while (jourTest.getDayOfWeek() == DayOfWeek.SATURDAY
+        || jourTest.getDayOfWeek() == DayOfWeek.SUNDAY) {
+      jourTest = jourTest.minusDays(1);
+    }
+    ZoneId zone = ZoneId.of("Africa/Casablanca");
+    UUID qrCodeId =
+        jdbcTemplate.queryForObject(
+            "select id from qr_codes where employe_id = ? and actif = true", UUID.class, employeId);
+    jdbcTemplate.update(
+        "insert into pointages(employe_id, qr_code_id, type_scan, horodatage) values"
+            + " (?, ?, cast('entree' as type_scan_pointage), ?)",
+        employeId,
+        qrCodeId,
+        Timestamp.from(jourTest.atTime(8, 45).atZone(zone).toInstant()));
+    jdbcTemplate.update(
+        "insert into pointages(employe_id, qr_code_id, type_scan, horodatage) values"
+            + " (?, ?, cast('sortie' as type_scan_pointage), ?)",
+        employeId,
+        qrCodeId,
+        Timestamp.from(jourTest.atTime(17, 0).atZone(zone).toInstant()));
+
+    pointageService.enregistrerAnomalieIdempotent(
+        employeId, jourTest, TypeAnomaliePointage.retard, null, null);
+
+    mockMvc
+        .perform(get("/api/pointages/dashboard").header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.joursOuvresPeriode").value(org.hamcrest.Matchers.greaterThan(0)))
+        .andExpect(
+            jsonPath("$.data.tauxPresence30Jours").value(org.hamcrest.Matchers.greaterThan(0.0)))
+        .andExpect(
+            jsonPath("$.data.repartitionParType[?(@.type == 'retard')].nombre")
+                .value(
+                    org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.greaterThanOrEqualTo(1))));
   }
 
   // Les scans réels horodatent toujours Instant.now() (kiosque) : impossible de simuler "hier" par

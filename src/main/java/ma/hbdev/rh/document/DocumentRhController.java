@@ -5,6 +5,8 @@ import java.util.UUID;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -67,6 +69,33 @@ class DocumentRhController {
   ApiResponse<Void> executerSurveillance() {
     surveillancePlanifieeService.executerSurveillance();
     return ApiResponse.ok();
+  }
+
+  // EF-DOC : aperçu du PDF avant confirmation d'envoi — même génération, sans e-mail ni
+  // persistance d'un EnvoiDocument. Rendu inline (pas Content-Disposition: attachment) pour
+  // s'ouvrir directement dans un onglet côté frontend, comme les PDF déjà envoyés.
+  @GetMapping(value = "/employes/{employeId}/certificat-stage/apercu", produces = "application/pdf")
+  ResponseEntity<byte[]> apercuCertificatStage(
+      @PathVariable UUID employeId, @RequestParam(required = false) String sujetStage) {
+    return reponsePdf(documentRhService.apercuCertificatStage(employeId, sujetStage));
+  }
+
+  @GetMapping(
+      value = "/employes/{employeId}/certificat-travail/apercu",
+      produces = "application/pdf")
+  ResponseEntity<byte[]> apercuCertificatTravail(@PathVariable UUID employeId) {
+    return reponsePdf(documentRhService.apercuCertificatTravail(employeId));
+  }
+
+  @GetMapping(
+      value = "/employes/{employeId}/attestation-travail/apercu",
+      produces = "application/pdf")
+  ResponseEntity<byte[]> apercuAttestationTravail(@PathVariable UUID employeId) {
+    return reponsePdf(documentRhService.apercuAttestationTravail(employeId));
+  }
+
+  private ResponseEntity<byte[]> reponsePdf(byte[] pdf) {
+    return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF).body(pdf);
   }
 
   @PostMapping("/employes/{employeId}/certificat-stage")

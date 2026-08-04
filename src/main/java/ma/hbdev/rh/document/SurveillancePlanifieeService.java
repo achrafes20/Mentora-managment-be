@@ -2,8 +2,10 @@ package ma.hbdev.rh.document;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import ma.hbdev.rh.auth.UserService;
 import ma.hbdev.rh.employee.EmployeModifieEvent;
 import ma.hbdev.rh.employee.EmployeReponse;
@@ -19,6 +21,7 @@ import org.springframework.web.client.RestClient;
 
 @Service
 @Transactional
+@Slf4j
 class SurveillancePlanifieeService {
 
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
@@ -118,18 +121,26 @@ class SurveillancePlanifieeService {
     if (destinataires.isEmpty()) {
       // Ne pas marquer les notifications comme envoyées : sans destinataire, rien n'est parti.
       // Elles restent "planifiee" et repartiront au prochain balayage, une fois un Admin actif.
-      System.err.println(
-          "Surveillance des fins de contrat : aucun compte Admin actif, "
-              + aTraiter.size()
-              + " notification(s) laissée(s) en attente.");
+      log.warn(
+          "Surveillance des fins de contrat : aucun compte Admin actif, {} notification(s)"
+              + " laissée(s) en attente.",
+          aTraiter.size());
       return;
     }
 
+    // Seules les notifications réellement envoyées sont marquées puis sauvegardées : si le
+    // webhook échoue pour une notification (n8n/Mailpit hors service, timeout...), elle doit
+    // rester "planifiee" pour repartir au prochain balayage plutôt que d'être marquée envoyée à
+    // tort (bug corrigé : avant, marquerEnvoyee()/marquerRelancee() étaient appelés AVANT
+    // l'envoi effectif, et l'échec du webhook était avalé silencieusement — la notification ne
+    // repartait donc jamais malgré un e-mail jamais parti).
+    List<NotificationPlanifiee> traitees = new ArrayList<>();
     for (NotificationPlanifiee notif : aTraiter) {
       try {
         EmployeReponse employe = employeService.recuperer(notif.getEmployeId());
-        String sujet = "";
-        String message = "";
+        String sujet;
+        String message;
+        boolean relance = false;
 
         if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_stage) {
           sujet = "Fin de stage proche : " + employe.prenom() + " " + employe.nom();
@@ -143,8 +154,7 @@ class SurveillancePlanifieeService {
                   + ") se termine le "
                   + employe.dateFinStagePrevue()
                   + " (J-3).\n\nVeuillez préparer le certificat de stage.\n\nCordialement,\nMentora RH";
-          notif.marquerEnvoyee();
-        } else if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_cdd) {
+        } else {
           boolean dejaEnvoye =
               notificationPlanifieeRepository.existsByEmployeIdAndStatut(
                       notif.getEmployeId(), StatutNotificationPlanifiee.envoyee)
@@ -152,6 +162,7 @@ class SurveillancePlanifieeService {
                       notif.getEmployeId(), StatutNotificationPlanifiee.relancee);
 
           if (dejaEnvoye) {
+            relance = true;
             sujet = "RAPPEL : Fin de CDD proche : " + employe.prenom() + " " + employe.nom();
             message =
                 "Bonjour,\n\nCeci est un rappel : le CDD de "
@@ -163,7 +174,6 @@ class SurveillancePlanifieeService {
                     + ") se termine le "
                     + employe.dateFinContratPrevue()
                     + " (J-3).\n\nVeuillez préparer le certificat de travail.\n\nCordialement,\nMentora RH";
-            notif.marquerRelancee();
           } else {
             sujet = "Fin de CDD proche : " + employe.prenom() + " " + employe.nom();
             message =
@@ -176,19 +186,28 @@ class SurveillancePlanifieeService {
                     + ") se termine le "
                     + employe.dateFinContratPrevue()
                     + " (J-15).\n\nVeuillez préparer le certificat de travail.\n\nCordialement,\nMentora RH";
-            notif.marquerEnvoyee();
           }
         }
 
         for (String destinataire : destinataires) {
           envoyerEmailViaWebhook(destinataire, sujet, message);
         }
+
+        if (relance) {
+          notif.marquerRelancee();
+        } else {
+          notif.marquerEnvoyee();
+        }
+        traitees.add(notif);
       } catch (Exception e) {
-        System.err.println(
-            "Erreur de traitement de la notification " + notif.getId() + ": " + e.getMessage());
+        log.error(
+            "Échec du traitement de la notification {} (webhook n8n indisponible ?) — reste"
+                + " planifiée, repartira au prochain balayage",
+            notif.getId(),
+            e);
       }
     }
-    notificationPlanifieeRepository.saveAll(aTraiter);
+    notificationPlanifieeRepository.saveAll(traitees);
   }
 
   private void envoyerEmailViaWebhook(String to, String subject, String message) {
@@ -201,7 +220,10 @@ class SurveillancePlanifieeService {
           .retrieve()
           .toBodilessEntity();
     } catch (Exception e) {
-      System.err.println("Erreur d'envoi webhook n8n: " + e.getMessage());
+      throw new EnvoiWebhookEchoueException(
+          "Échec de l'envoi de la notification de surveillance via le webhook n8n : "
+              + e.getMessage(),
+          e);
     }
   }
 

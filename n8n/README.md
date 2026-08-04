@@ -15,9 +15,18 @@ jamais exportés ni committés** — chaque dev les recrée localement une fois
 | `T3B1RecrutementImapIngest001.json` — *IMAP vers ingestion recrutement* | Déclencheur IMAP (nouvel e-mail reçu) → `POST /api/recruitment/ingest` | EF-REC-02/03 (T3.B1) | Credential IMAP nommé `IMAP Recrutement (dev)` (host/port/user/password de la boîte de test — voir « Boîte mail de recrutement » ci-dessous) + credential Header Auth nommé `Recrutement Webhook Secret (dev)` (en-tête `X-Internal-Webhook-Secret`, valeur = `INTERNAL_WEBHOOK_SECRET` du `.env` backend) |
 | `T3B1RecrutementArchivageCron001.json` — *Cron archivage candidatures en attente* | Cron quotidien (3h) → `POST /api/recruitment/candidatures/archiver-expirees` | EF-REC-12, fenêtre de rétention (T3.B1) | Même credential Header Auth `Recrutement Webhook Secret (dev)` que ci-dessus |
 
-*(Ce tableau grossira à chaque nouveau workflow ajouté en Phase 1+ : cron
-surveillance documents EF-DOC-12→14, etc. Une ligne par fichier de
-`n8n/workflows/`.)*
+*(Ce tableau grossira à chaque nouveau workflow ajouté en Phase 1+. Une ligne
+par fichier de `n8n/workflows/`.)*
+
+> **Cron surveillance documents (EF-DOC-12→14) : volontairement PAS un
+> workflow n8n.** Contrairement au cron d'archivage recrutement ci-dessus,
+> le balayage quotidien des fins de stage/CDD (`SurveillancePlanifieeService
+> .balayageQuotidien()`) tourne via `@Scheduled` Spring natif (voir sa
+> Javadoc), justement pour qu'une fonctionnalité RH ne dépende pas de la
+> disponibilité de n8n. `POST /api/internal/surveillance/run` (même garde
+> `X-Internal-Webhook-Secret`) reste exposé pour un rejeu manuel (rattrapage,
+> vérification en recette) mais n'est appelé par aucun cron n8n — en ajouter
+> un ferait tourner le balayage deux fois par jour.
 
 ### Boîte mail de recrutement (dev)
 
@@ -39,8 +48,11 @@ deux endpoints ci-dessus contre un appel externe non autorisé — ce ne sont
 ni des endpoints utilisateur (pas de session JWT), ni ouverts sans contrôle
 comme `/api/kiosque/**` (cf. `InternalWebhookGuard` côté backend). Sa
 valeur doit être identique à `INTERNAL_WEBHOOK_SECRET` dans le `.env`
-backend, et sera réutilisée par les futurs pings cron n8n de T4.A1
-(surveillance fin de stage/CDD).
+backend. Le même credential protège aussi `POST
+/api/internal/surveillance/run` (T4.A1, rejeu manuel du balayage fin de
+stage/CDD — voir l'encadré ci-dessus, ce n'est volontairement pas un cron
+n8n) si un dev a besoin de le déclencher à la main depuis n8n plutôt qu'au
+`curl`.
 
 ## Premier lancement (à faire une fois par dev, par volume Docker)
 

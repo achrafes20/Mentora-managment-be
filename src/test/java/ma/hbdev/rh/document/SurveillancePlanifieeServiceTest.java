@@ -1,5 +1,6 @@
 package ma.hbdev.rh.document;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -21,6 +22,8 @@ class SurveillancePlanifieeServiceTest {
   private NotificationPlanifieeRepository repository;
   private EmployeService employeService;
   private UserService userService;
+  private RestClient.RequestBodyUriSpec requestBodyUriSpec;
+  private RestClient.ResponseSpec responseSpec;
   private SurveillancePlanifieeService service;
 
   @BeforeEach
@@ -32,6 +35,16 @@ class SurveillancePlanifieeServiceTest {
     RestClient.Builder restClientBuilder = mock(RestClient.Builder.class);
     RestClient restClient = mock(RestClient.class);
     when(restClientBuilder.build()).thenReturn(restClient);
+    // RETURNS_SELF plutôt que des matchers un par un (uri(anyString()), body(any())...) : l'API
+    // fluide de RestClient a plusieurs surcharges de body() (Object, StreamingHttpOutputMessage),
+    // et un matcher any() imprécis peut résoudre vers la mauvaise surcharge côté compilateur —
+    // silencieusement raté (le maillon suivant de la chaîne redevient null). RETURNS_SELF fait
+    // toujours renvoyer le mock lui-même, quelle que soit la surcharge réellement appelée.
+    requestBodyUriSpec =
+        mock(RestClient.RequestBodyUriSpec.class, org.mockito.Answers.RETURNS_SELF);
+    responseSpec = mock(RestClient.ResponseSpec.class);
+    when(restClient.post()).thenReturn(requestBodyUriSpec);
+    when(requestBodyUriSpec.retrieve()).thenReturn(responseSpec);
 
     // Les alertes partent vers les comptes Admin actifs, lus en base au moment du balayage.
     userService = mock(UserService.class);
@@ -112,5 +125,69 @@ class SurveillancePlanifieeServiceTest {
 
     org.mockito.Mockito.verify(repository, org.mockito.Mockito.never())
         .save(any(NotificationPlanifiee.class));
+  }
+
+  private EmployeReponse employeStagiaire(UUID employeId) {
+    return new EmployeReponse(
+        employeId,
+        "Nom",
+        "Prenom",
+        "email",
+        "tel",
+        "poste",
+        UUID.randomUUID(),
+        "dept",
+        null,
+        LocalDate.now(),
+        "STAGIAIRE",
+        null,
+        LocalDate.now().plusDays(3),
+        null,
+        null,
+        "actif",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  @Test
+  void executerSurveillance_envoiReussi_marqueEnvoyeeEtSauvegarde() {
+    UUID employeId = UUID.randomUUID();
+    NotificationPlanifiee notif =
+        new NotificationPlanifiee(employeId, TypeFinSurveillee.fin_stage, LocalDate.now());
+    when(repository.findByStatutAndDateEcheanceLessThanEqual(
+            StatutNotificationPlanifiee.planifiee, LocalDate.now()))
+        .thenReturn(List.of(notif));
+    when(employeService.recuperer(employeId)).thenReturn(employeStagiaire(employeId));
+    when(responseSpec.toBodilessEntity()).thenReturn(null);
+
+    service.executerSurveillance();
+
+    assertThat(notif.getStatut()).isEqualTo(StatutNotificationPlanifiee.envoyee);
+    verify(repository).saveAll(List.of(notif));
+  }
+
+  // Régression : avant le correctif, marquerEnvoyee()/marquerRelancee() étaient appelés AVANT
+  // l'envoi effectif et l'échec du webhook était avalé silencieusement — la notification était
+  // donc sauvegardée comme "envoyée" alors qu'aucun e-mail n'était réellement parti, et ne
+  // repartait plus jamais au balayage suivant.
+  @Test
+  void executerSurveillance_echecWebhook_neMarquePasEnvoyeeEtNeSauvegardeRien() {
+    UUID employeId = UUID.randomUUID();
+    NotificationPlanifiee notif =
+        new NotificationPlanifiee(employeId, TypeFinSurveillee.fin_stage, LocalDate.now());
+    when(repository.findByStatutAndDateEcheanceLessThanEqual(
+            StatutNotificationPlanifiee.planifiee, LocalDate.now()))
+        .thenReturn(List.of(notif));
+    when(employeService.recuperer(employeId)).thenReturn(employeStagiaire(employeId));
+    when(responseSpec.toBodilessEntity()).thenThrow(new RuntimeException("n8n indisponible"));
+
+    service.executerSurveillance();
+
+    assertThat(notif.getStatut()).isEqualTo(StatutNotificationPlanifiee.planifiee);
+    verify(repository).saveAll(List.of());
   }
 }

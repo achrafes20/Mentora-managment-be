@@ -73,17 +73,71 @@ class DocumentRhService {
     return envoi;
   }
 
+  /**
+   * EF-DOC : aperçu du PDF avant envoi — même génération que l'envoi, sans e-mail ni persistance.
+   */
+  byte[] apercuCertificatStage(UUID employeId, String sujetStage) {
+    return genererPdfCertificatStage(trouverEmploye(employeId), sujetStage);
+  }
+
+  byte[] apercuCertificatTravail(UUID employeId) {
+    return genererPdfCertificatTravail(trouverEmploye(employeId));
+  }
+
+  byte[] apercuAttestationTravail(UUID employeId) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    validerEligibiliteAttestation(employe);
+    return genererPdfAttestationTravail(employe);
+  }
+
+  private byte[] genererPdfCertificatStage(EmployeReponse employe, String sujetStage) {
+    return certificatGenerator.genererCertificatStage(
+        employe.prenom(),
+        employe.nom(),
+        employe.dateEmbauche(),
+        employe.dateFinStagePrevue(),
+        employe.poste(),
+        sujetStage,
+        employe.sexe());
+  }
+
+  private byte[] genererPdfCertificatTravail(EmployeReponse employe) {
+    return certificatGenerator.genererCertificatTravail(
+        employe.prenom(),
+        employe.nom(),
+        employe.cin(),
+        employe.poste(),
+        employe.typeContrat(),
+        employe.dateEmbauche(),
+        employe.dateDepart(),
+        employe.sexe());
+  }
+
+  private byte[] genererPdfAttestationTravail(EmployeReponse employe) {
+    return certificatGenerator.genererAttestationTravail(
+        employe.prenom(),
+        employe.nom(),
+        employe.cin(),
+        employe.poste(),
+        employe.typeContrat(),
+        employe.dateEmbauche(),
+        employe.sexe());
+  }
+
+  private void validerEligibiliteAttestation(EmployeReponse employe) {
+    if (!"actif".equals(employe.statut())) {
+      throw new IllegalArgumentException(
+          "L'attestation de travail n'est disponible que pour un employé actif.");
+    }
+    if (!"CDI".equals(employe.typeContrat()) && !"CDD".equals(employe.typeContrat())) {
+      throw new IllegalArgumentException(
+          "L'attestation de travail n'est disponible que pour un employé CDI ou CDD.");
+    }
+  }
+
   EnvoiDocument envoyerCertificatStage(UUID employeId, String sujetStage, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
-    byte[] pdf =
-        certificatGenerator.genererCertificatStage(
-            employe.prenom(),
-            employe.nom(),
-            employe.dateEmbauche(),
-            employe.dateFinStagePrevue(),
-            employe.poste(),
-            sujetStage,
-            employe.sexe());
+    byte[] pdf = genererPdfCertificatStage(employe, sujetStage);
 
     return traiterEnvoi(
         employe,
@@ -98,16 +152,7 @@ class DocumentRhService {
 
   EnvoiDocument envoyerCertificatTravail(UUID employeId, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
-    byte[] pdf =
-        certificatGenerator.genererCertificatTravail(
-            employe.prenom(),
-            employe.nom(),
-            employe.cin(),
-            employe.poste(),
-            employe.typeContrat(),
-            employe.dateEmbauche(),
-            employe.dateDepart(),
-            employe.sexe());
+    byte[] pdf = genererPdfCertificatTravail(employe);
 
     return traiterEnvoi(
         employe,
@@ -127,23 +172,8 @@ class DocumentRhService {
    */
   EnvoiDocument envoyerAttestationTravail(UUID employeId, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
-    if (!"actif".equals(employe.statut())) {
-      throw new IllegalArgumentException(
-          "L'attestation de travail n'est disponible que pour un employé actif.");
-    }
-    if (!"CDI".equals(employe.typeContrat()) && !"CDD".equals(employe.typeContrat())) {
-      throw new IllegalArgumentException(
-          "L'attestation de travail n'est disponible que pour un employé CDI ou CDD.");
-    }
-    byte[] pdf =
-        certificatGenerator.genererAttestationTravail(
-            employe.prenom(),
-            employe.nom(),
-            employe.cin(),
-            employe.poste(),
-            employe.typeContrat(),
-            employe.dateEmbauche(),
-            employe.sexe());
+    validerEligibiliteAttestation(employe);
+    byte[] pdf = genererPdfAttestationTravail(employe);
 
     return traiterEnvoi(
         employe,
@@ -218,7 +248,7 @@ class DocumentRhService {
           .retrieve()
           .toBodilessEntity();
     } catch (Exception e) {
-      throw new IllegalStateException(
+      throw new EnvoiWebhookEchoueException(
           "Échec de l'envoi du document via le webhook n8n : " + e.getMessage(), e);
     }
   }
