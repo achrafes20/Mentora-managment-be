@@ -63,7 +63,8 @@ class OffreEmploiService {
                 requete.departementId(),
                 MotsClesUtils.versJsonNode(requete.motsClesRequis(), objectMapper),
                 creePar));
-    evenements.publishEvent(new OffreEmploiModifieEvent(offre.getId(), "creation"));
+    evenements.publishEvent(
+        new OffreEmploiModifieEvent(offre.getId(), "creation", offre.getIntitule()));
     // EF-REC-11/12 : à la création, on réévalue les candidatures "en_attente" contre les
     // nouveaux mots-clés requis.
     reactiverCandidaturesCompatibles(offre);
@@ -77,21 +78,24 @@ class OffreEmploiService {
         requete.description(),
         requete.departementId(),
         MotsClesUtils.versJsonNode(requete.motsClesRequis(), objectMapper));
-    evenements.publishEvent(new OffreEmploiModifieEvent(offre.getId(), "modification"));
+    evenements.publishEvent(
+        new OffreEmploiModifieEvent(offre.getId(), "modification", offre.getIntitule()));
     return offre;
   }
 
   OffreEmploi fermer(UUID id) {
     OffreEmploi offre = trouver(id);
     offre.fermer();
-    evenements.publishEvent(new OffreEmploiModifieEvent(offre.getId(), "fermeture"));
+    evenements.publishEvent(
+        new OffreEmploiModifieEvent(offre.getId(), "fermeture", offre.getIntitule()));
     return offre;
   }
 
   OffreEmploi rouvrir(UUID id) {
     OffreEmploi offre = trouver(id);
     offre.rouvrir();
-    evenements.publishEvent(new OffreEmploiModifieEvent(offre.getId(), "reouverture"));
+    evenements.publishEvent(
+        new OffreEmploiModifieEvent(offre.getId(), "reouverture", offre.getIntitule()));
     return offre;
   }
 

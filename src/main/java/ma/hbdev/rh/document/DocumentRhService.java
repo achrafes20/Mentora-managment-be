@@ -9,6 +9,7 @@ import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.mail.RestClientFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ class DocumentRhService {
   private final String webhookUrl;
   private final String apiBaseUrl;
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
+  private final ApplicationEventPublisher evenements;
 
   DocumentRhService(
       EnvoiDocumentRhRepository envoiDocumentRepository,
@@ -36,7 +38,8 @@ class DocumentRhService {
       RestClient.Builder restClientBuilder,
       @Value("${app.n8n.base-url:http://localhost:5678}") String n8nBaseUrl,
       @Value("${app.api-base-url:http://localhost:8080}") String apiBaseUrl,
-      NotificationPlanifieeRepository notificationPlanifieeRepository) {
+      NotificationPlanifieeRepository notificationPlanifieeRepository,
+      ApplicationEventPublisher evenements) {
     this.envoiDocumentRepository = envoiDocumentRepository;
     this.employeService = employeService;
     this.certificatGenerator = certificatGenerator;
@@ -47,6 +50,7 @@ class DocumentRhService {
     this.webhookUrl = MailService.urlWebhookNotifyEmail(n8nBaseUrl);
     this.apiBaseUrl = apiBaseUrl.replaceAll("/+$", "");
     this.notificationPlanifieeRepository = notificationPlanifieeRepository;
+    this.evenements = evenements;
   }
 
   EnvoiDocument renvoyerDepuisSurveillance(UUID notifId, UUID envoyePar) {
@@ -163,7 +167,14 @@ class DocumentRhService {
         new EnvoiDocument(
             employe.id(), typeDocument, fichier.id(), destinataire, messageFinal, envoyePar);
 
-    return envoiDocumentRepository.save(envoi);
+    EnvoiDocument saved = envoiDocumentRepository.save(envoi);
+    evenements.publishEvent(
+        new EnvoiDocumentEvent(
+            saved.getId(),
+            employe.id(),
+            typeDocument.name(),
+            employe.prenom() + " " + employe.nom()));
+    return saved;
   }
 
   private void envoyerEmailViaWebhook(String to, String subject, String message) {

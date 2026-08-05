@@ -191,17 +191,16 @@ class DocumentRhIntegrationTest {
     return UUID.fromString(objectMapper.readTree(resEmp).at("/data/id").asText());
   }
 
-  // Toute la couche est @PreAuthorize("hasRole('ADMIN')") au niveau du contrôleur. Anonyme -> 403
-  // (pas 401) : SecurityConfig ne déclare pas d'AuthenticationEntryPoint dédié, Spring Security
-  // retombe sur Http403ForbiddenEntryPoint — comportement déjà établi/documenté ailleurs (T1.C1),
-  // pas un bug de ce module.
+  // Toute la couche est @PreAuthorize("hasRole('ADMIN')") au niveau du contrôleur. Anonyme -> 401
+  // (ApiAuthenticationEntryPoint, SecurityConfig) ; authentifié mais rôle insuffisant -> 403
+  // (AccessDeniedException, intercepté par GlobalExceptionHandler dans les deux cas ci-dessous).
   @Test
   void refuseSansAuthentificationEtAuManager() throws Exception {
     UUID employeId = creerEmploye("Rbac", "rbac@hbdev.ma");
 
     mockMvc
         .perform(get("/api/documents/employes/{id}", employeId))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isUnauthorized());
 
     mockMvc
         .perform(
@@ -211,7 +210,7 @@ class DocumentRhIntegrationTest {
 
     mockMvc
         .perform(post("/api/documents/employes/{id}/certificat-travail", employeId))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isUnauthorized());
 
     mockMvc
         .perform(
@@ -287,7 +286,9 @@ class DocumentRhIntegrationTest {
         notificationPlanifieeRepository.save(
             new NotificationPlanifiee(employeId, TypeFinSurveillee.fin_cdd, LocalDate.now()));
 
-    mockMvc.perform(post("/api/documents/surveillance/executer")).andExpect(status().isForbidden());
+    mockMvc
+        .perform(post("/api/documents/surveillance/executer"))
+        .andExpect(status().isUnauthorized());
 
     mockMvc
         .perform(

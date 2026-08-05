@@ -83,7 +83,8 @@ class CandidatureIngestionService {
               candidature, fichier, offreCorrespondante, candidature.getAnalyseCouranteId());
         }
         evenements.publishEvent(
-            new CandidatureModifieEvent(candidature.getId(), "reception_dupliquee"));
+            new CandidatureModifieEvent(
+                candidature.getId(), "reception_dupliquee", candidature.nomComplet()));
         // findByOffreIdAndEmail ne fait pas de JOIN FETCH sur analyseCourante : sans ce
         // re-chargement, le proxy Hibernate créé au premier chargement (pointant vers l'ancienne
         // analyse) casse la sérialisation de la réponse une fois la transaction/session fermée
@@ -123,7 +124,8 @@ class CandidatureIngestionService {
                 referenceSourceImport,
                 corps));
 
-    evenements.publishEvent(new CandidatureModifieEvent(candidature.getId(), "ingestion"));
+    evenements.publishEvent(
+        new CandidatureModifieEvent(candidature.getId(), "ingestion", candidature.nomComplet()));
     declencherAnalyse(candidature, fichier, offreCorrespondante, null);
     return candidature;
   }
@@ -140,7 +142,9 @@ class CandidatureIngestionService {
             ? offreEmploiRepository.findById(candidature.getOffreId()).orElse(null)
             : null;
     declencherAnalyse(candidature, fichier, offre, candidature.getAnalyseCouranteId());
-    evenements.publishEvent(new CandidatureModifieEvent(candidature.getId(), "relance_analyse"));
+    evenements.publishEvent(
+        new CandidatureModifieEvent(
+            candidature.getId(), "relance_analyse", candidature.nomComplet()));
   }
 
   private void declencherAnalyse(

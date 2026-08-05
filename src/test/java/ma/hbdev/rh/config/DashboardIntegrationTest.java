@@ -224,12 +224,9 @@ class DashboardIntegrationTest {
 
   @Test
   void nonAuthentifieForbidden() throws Exception {
-    // Ce projet retourne 403 (pas 401) pour les non-authentifiés : comportement
-    // préexistant de SecurityConfig (Http403ForbiddenEntryPoint par défaut de Spring
-    // Security, aucun AuthenticationEntryPoint personnalisé défini) — documenté en
-    // T1.C1 (voir Suivi de session 2026-07-13).
-    mockMvc.perform(get("/api/dashboard/stats")).andExpect(status().isForbidden());
-    mockMvc.perform(get("/api/dashboard/stats/manager")).andExpect(status().isForbidden());
+    // ApiAuthenticationEntryPoint (SecurityConfig) répond 401 pour un principal anonyme.
+    mockMvc.perform(get("/api/dashboard/stats")).andExpect(status().isUnauthorized());
+    mockMvc.perform(get("/api/dashboard/stats/manager")).andExpect(status().isUnauthorized());
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────

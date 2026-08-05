@@ -124,8 +124,9 @@ app:
       seuil-score: ${RECRUITMENT_REACTIVATION_SEUIL_SCORE:70}
       fenetre-mois: ${RECRUITMENT_REACTIVATION_FENETRE_MOIS:6}
     # EF-REC-12 : archivage quotidien des candidatures "En attente" dont la fenêtre de rétention
-    # est dépassée (03h00, heure de Casablanca). Voir CandidatureService#archivageQuotidien.
-    archivage-cron: ${RECRUITMENT_ARCHIVAGE_CRON:0 0 3 * * *}
+    # est dépassée (03h30, heure de Casablanca — décalé de 30 min pour ne pas coïncider avec
+    # documents.surveillance-cron, également à 03h00). Voir CandidatureService#archivageQuotidien.
+    archivage-cron: ${RECRUITMENT_ARCHIVAGE_CRON:0 30 3 * * *}
   # --- Documents RH (EF-DOC-02/13/14) : surveillance des fins de contrat. ---
   documents:
     delai-notification-fin-stage-jours: ${DOCUMENTS_DELAI_FIN_STAGE_JOURS:3}

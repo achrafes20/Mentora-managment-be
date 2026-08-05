@@ -32,7 +32,8 @@ class DepartementService {
     verifierNomDisponible(requete.nom(), null);
     Departement departement =
         departementRepository.save(new Departement(requete.nom(), requete.managerId()));
-    evenements.publishEvent(new DepartementModifieEvent(departement.getId(), "creation"));
+    evenements.publishEvent(
+        new DepartementModifieEvent(departement.getId(), "creation", departement.getNom()));
     return departement;
   }
 
@@ -41,7 +42,8 @@ class DepartementService {
     verifierNomDisponible(requete.nom(), departement.getNom());
     departement.setNom(requete.nom());
     departement.setManagerId(requete.managerId());
-    evenements.publishEvent(new DepartementModifieEvent(departement.getId(), "modification"));
+    evenements.publishEvent(
+        new DepartementModifieEvent(departement.getId(), "modification", departement.getNom()));
     return departement;
   }
 
@@ -55,13 +57,15 @@ class DepartementService {
       throw new DepartementADesEmployesActifsException(employesActifs);
     }
     departement.desactiver();
-    evenements.publishEvent(new DepartementModifieEvent(departement.getId(), "desactivation"));
+    evenements.publishEvent(
+        new DepartementModifieEvent(departement.getId(), "desactivation", departement.getNom()));
   }
 
   Departement activer(UUID id) {
     Departement departement = trouver(id);
     departement.activer();
-    evenements.publishEvent(new DepartementModifieEvent(departement.getId(), "activation"));
+    evenements.publishEvent(
+        new DepartementModifieEvent(departement.getId(), "activation", departement.getNom()));
     return departement;
   }
 

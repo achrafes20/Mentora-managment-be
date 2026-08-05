@@ -34,4 +34,14 @@ interface PlanningTeletravailRepository extends JpaRepository<PlanningTeletravai
       @Param("employeId") UUID employeId,
       @Param("date") LocalDate date,
       @Param("jourSemaine") TypeJourSemaine jourSemaine);
+
+  /**
+   * Surcharge pratique : dérive le jour de semaine depuis la date, pour les deux seuls appelants
+   * (détection temps réel dans {@code PointageService}, job nocturne dans {@code AnomalieService})
+   * — un seul endroit qui sait comment déduire {@link TypeJourSemaine} d'une {@link LocalDate},
+   * pour que les deux ne puissent pas diverger.
+   */
+  default boolean estEnTeletravail(UUID employeId, LocalDate date) {
+    return estEnTeletravail(employeId, date, TypeJourSemaine.depuis(date.getDayOfWeek()));
+  }
 }

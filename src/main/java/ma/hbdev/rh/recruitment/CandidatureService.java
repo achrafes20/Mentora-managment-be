@@ -139,7 +139,8 @@ class CandidatureService {
     validerTransition(candidature.getStatut(), nouveauStatut);
     candidature.changerStatut(nouveauStatut);
     evenements.publishEvent(
-        new CandidatureModifieEvent(candidature.getId(), "statut_" + nouveauStatut));
+        new CandidatureModifieEvent(
+            candidature.getId(), "statut_" + nouveauStatut, candidature.nomComplet()));
 
     if (nouveauStatut == StatutCandidature.entretien) {
       demarrerEntretien(candidature, managerId, dateEntretien);
@@ -165,7 +166,9 @@ class CandidatureService {
       throw new EntretienDejaResoluException(candidatureId);
     }
     entretien.reprogrammer(nouveauManagerId, nouvelleDate);
-    evenements.publishEvent(new CandidatureModifieEvent(candidatureId, "entretien_reprogramme"));
+    evenements.publishEvent(
+        new CandidatureModifieEvent(
+            candidatureId, "entretien_reprogramme", candidature.nomComplet()));
     return entretien;
   }
 
@@ -178,7 +181,9 @@ class CandidatureService {
       return;
     }
     candidature.changerStatut(StatutCandidature.decision);
-    evenements.publishEvent(new CandidatureModifieEvent(candidatureId, "statut_decision_auto"));
+    evenements.publishEvent(
+        new CandidatureModifieEvent(
+            candidatureId, "statut_decision_auto", candidature.nomComplet()));
   }
 
   @Transactional(readOnly = true)
@@ -200,7 +205,8 @@ class CandidatureService {
     }
     candidature.changerStatut(StatutCandidature.recu);
     evenements.publishEvent(
-        new CandidatureModifieEvent(candidature.getId(), "reactivation_validee"));
+        new CandidatureModifieEvent(
+            candidature.getId(), "reactivation_validee", candidature.nomComplet()));
     return candidature;
   }
 
@@ -218,7 +224,7 @@ class CandidatureService {
    * ma.hbdev.rh.document.SurveillancePlanifieeService#balayageQuotidien()} — le Maroc suspend
    * l'heure d'été pendant le Ramadan, on ne se repose jamais sur le fuseau par défaut de la JVM.
    */
-  @Scheduled(cron = "${app.recruitment.archivage-cron:0 0 3 * * *}", zone = "Africa/Casablanca")
+  @Scheduled(cron = "${app.recruitment.archivage-cron:0 30 3 * * *}", zone = "Africa/Casablanca")
   void archivageQuotidien() {
     archiverExpirees();
   }
@@ -232,7 +238,9 @@ class CandidatureService {
             StatutCandidature.en_attente, seuil);
     expirees.forEach(Candidature::archiver);
     expirees.forEach(
-        c -> evenements.publishEvent(new CandidatureModifieEvent(c.getId(), "archivage_auto")));
+        c ->
+            evenements.publishEvent(
+                new CandidatureModifieEvent(c.getId(), "archivage_auto", c.nomComplet())));
     return expirees.size();
   }
 

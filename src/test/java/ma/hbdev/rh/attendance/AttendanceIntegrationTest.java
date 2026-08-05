@@ -774,6 +774,89 @@ class AttendanceIntegrationTest {
         .andExpect(status().isNotFound());
   }
 
+  // Régression : détection "retard"/"départ anticipé" en temps réel
+  // (PointageService#detecterAnomalieImmediate, appelée depuis un vrai scan kiosque) ne
+  // consultait pas le planning télétravail — seul AnomalieService#analyserJourPourEmploye (job
+  // nocturne, couvert ci-dessus par gereLePlanningTeletravailEtCourtCircuiteLaDetectionDAnomalies)
+  // le faisait. Un employé en télétravail qui scanne quand même (dépose un dossier au bureau,
+  // scénario hybride courant chez HB) se faisait donc marquer en retard à tort.
+  @Test
+  void scanTardifEnTeletravailNeCreePasDAnomalieImmediateMaisUnTemoinSansPlanningOui()
+      throws Exception {
+    // heureDebutMatin=00:00 + tolérance 0 : n'importe quelle heure réelle d'exécution du test est
+    // "après la limite d'arrivée", pour ne pas dépendre de l'heure du poste qui lance la suite.
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"00:00:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"23:59:00",
+                     "toleranceMinutes":0,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employeTeletravail =
+        creerEmployeAvecQrCode(
+            "TeletravailImmediat", "teletravail.immediat@hbdev.ma", "0600000007");
+    UUID employeTemoin =
+        creerEmployeAvecQrCode("TemoinImmediat", "temoin.immediat@hbdev.ma", "0600000008");
+
+    // Planning couvrant tous les jours (comme le test nocturne ci-dessus) pour ne pas dépendre du
+    // jour d'exécution réel.
+    mockMvc
+        .perform(
+            post("/api/employes/{id}/teletravail", employeTeletravail)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"dateDebut":"2020-01-01","dateFin":null,
+                     "jours":["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"]}
+                    """))
+        .andExpect(status().isCreated());
+
+    scannerEntree(employeTeletravail);
+    scannerEntree(employeTemoin);
+
+    LocalDate aujourdHui = LocalDate.now(ZoneId.of("Africa/Casablanca"));
+    Integer anomaliesTeletravail =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ?",
+            Integer.class,
+            employeTeletravail,
+            aujourdHui);
+    assertThat(anomaliesTeletravail).isZero();
+
+    Integer anomaliesTemoin =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ? "
+                + "and type_anomalie = 'retard'",
+            Integer.class,
+            employeTemoin,
+            aujourdHui);
+    assertThat(anomaliesTemoin).isEqualTo(1);
+  }
+
+  private void scannerEntree(UUID employeId) throws Exception {
+    String valeurQr =
+        jdbcTemplate.queryForObject(
+            "select valeur from qr_codes where employe_id = ? and actif = true",
+            String.class,
+            employeId);
+    String scanReq =
+        objectMapper.writeValueAsString(new ScanRequete(valeurQr, TypeScanPointage.entree));
+    mockMvc
+        .perform(
+            post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", deviceToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(scanReq))
+        .andExpect(status().isOk());
+  }
+
   // NFR-UX-02 : jeton d'activation par appareil — remplace le permitAll() inconditionnel du
   // kiosque.
   @Test

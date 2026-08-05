@@ -48,7 +48,8 @@ class NotificationEventListenerTest {
 
   @Test
   void ignoreUnEvenementQuiNePortePasDeNotificationFonctionnelle() {
-    inAppListener.creerNotification(new EmployeModifieEvent(UUID.randomUUID(), "modification"));
+    inAppListener.creerNotification(
+        new EmployeModifieEvent(UUID.randomUUID(), "modification", "Test Employe"));
 
     org.mockito.Mockito.verifyNoInteractions(inAppRepository);
   }

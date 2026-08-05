@@ -105,8 +105,13 @@ public class PointageService {
         pointageRepository.save(
             new Pointage(qr.getEmployeId(), qr.getId(), requete.typeScan(), maintenant, horaireId));
 
-    // Détection immédiate des anomalies "retard" et "départ anticipé" si horaire disponible
-    if (horaire != null) {
+    // Détection immédiate des anomalies "retard" et "départ anticipé" si horaire disponible et
+    // hors télétravail planifié (EF-ATT-04/09 — même court-circuit que
+    // AnomalieService#analyserJourPourEmploye, requis ici aussi : un employé en télétravail qui
+    // passe au bureau/scanne à distance ne doit jamais être marqué en retard sur un jour où il
+    // n'est de toute façon pas censé arriver à l'horaire de référence sur site).
+    if (horaire != null
+        && !planningTeletravailRepository.estEnTeletravail(qr.getEmployeId(), dateAujourdHui)) {
       detecterAnomalieImmediate(pointage, horaire);
     }
 

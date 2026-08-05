@@ -6,6 +6,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import ma.hbdev.rh.shared.security.PasswordPolicy;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,7 @@ public class UserService {
   private final SessionRepository sessionRepository;
   private final PasswordEncoder passwordEncoder;
   private final PasswordPolicy passwordPolicy;
+  private final ApplicationEventPublisher evenements;
 
   /** Retourne tous les utilisateurs (admin uniquement). */
   @Transactional(readOnly = true)
@@ -107,6 +109,7 @@ public class UserService {
     user.setModifieLe(Instant.now());
 
     User saved = userRepository.save(user);
+    evenements.publishEvent(CompteEvent.creation(saved.getId(), saved.getEmail()));
     log.info("Compte créé : {} ({})", saved.getEmail(), saved.getRole());
     return UserResponse.fromUser(saved);
   }
@@ -123,6 +126,7 @@ public class UserService {
     user.setModifieLe(Instant.now());
 
     User saved = userRepository.save(user);
+    evenements.publishEvent(CompteEvent.modification(saved.getId(), saved.getEmail()));
     log.info("Compte mis à jour : {}", saved.getEmail());
     return UserResponse.fromUser(saved);
   }
@@ -148,6 +152,7 @@ public class UserService {
               sessionRepository.save(session);
             });
 
+    evenements.publishEvent(CompteEvent.desactivation(user.getId(), user.getEmail()));
     log.info("Compte désactivé : {}", user.getEmail());
     return UserResponse.fromUser(user);
   }
@@ -163,6 +168,7 @@ public class UserService {
     user.setModifieLe(Instant.now());
     userRepository.save(user);
 
+    evenements.publishEvent(CompteEvent.activation(user.getId(), user.getEmail()));
     log.info("Compte réactivé : {}", user.getEmail());
     return UserResponse.fromUser(user);
   }
