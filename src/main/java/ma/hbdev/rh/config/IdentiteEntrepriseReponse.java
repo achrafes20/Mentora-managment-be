@@ -13,12 +13,20 @@ public record IdentiteEntrepriseReponse(
     String adresse,
     String telephone,
     String email,
+    String ice,
+    String rc,
+    String ville,
     UUID logoFichierId,
+    UUID signatureFichierId,
+    String signataireNom,
+    String signataireFonction,
+    String signataireSexe,
     UUID modifiePar,
     Instant modifieLe) {
 
   private static final IdentiteEntrepriseReponse VIDE =
-      new IdentiteEntrepriseReponse(null, null, null, null, null, null, null, null);
+      new IdentiteEntrepriseReponse(
+          null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 
   static IdentiteEntrepriseReponse vide() {
     return VIDE;
@@ -31,7 +39,14 @@ public record IdentiteEntrepriseReponse(
         entite.getAdresse(),
         entite.getTelephone(),
         entite.getEmail(),
+        entite.getIce(),
+        entite.getRc(),
+        entite.getVille(),
         entite.getLogoFichierId(),
+        entite.getSignatureFichierId(),
+        entite.getSignataireNom(),
+        entite.getSignataireFonction(),
+        entite.getSignataireSexe() == null ? null : entite.getSignataireSexe().name(),
         entite.getModifiePar(),
         entite.getModifieLe());
   }

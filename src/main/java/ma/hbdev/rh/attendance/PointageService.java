@@ -7,8 +7,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import ma.hbdev.rh.shared.export.FormatExport;
@@ -32,7 +34,7 @@ public class PointageService {
 
   private static final ZoneId ZONE = ZoneId.of("Africa/Casablanca");
 
-  /** Durée de la pause midi, déduite systématiquement (EF-ATT-03). */
+  /** Repli si aucun horaire de référence n'est configuré (EF-ATT-03). */
   private static final Duration PAUSE_MIDI = Duration.ofHours(1);
 
   private static final List<String> ENTETES_EXPORT_PRESENCE =
@@ -162,35 +164,71 @@ public class PointageService {
       UUID pointageSortieId) {
     if (!anomalieRepository.existsByEmployeIdAndDatePointageAndTypeAnomalie(
         employeId, date, type)) {
-      anomalieRepository.save(
-          new AnomaliePointage(employeId, date, type, pointageEntreeId, pointageSortieId));
-      verifierSeuilAnomalies(employeId);
+      AnomaliePointage anomalie =
+          anomalieRepository.save(
+              new AnomaliePointage(employeId, date, type, pointageEntreeId, pointageSortieId));
+      notifierEmployeDeSaPropreAnomalie(employeId, type, date);
+      verifierSeuilAnomalies(employeId, anomalie);
     }
+  }
+
+  /**
+   * EF-ATT-04 : contrairement à l'escalade sur seuil ({@link #verifierSeuilAnomalies}, réservée au
+   * Manager et déclenchée seulement au franchissement), l'employé lui-même est notifié à chaque
+   * anomalie détectée sur son propre pointage, s'il dispose d'un compte applicatif ({@code
+   * employes.utilisateur_id} nullable — dégradation silencieuse sinon, cf. {@link
+   * AnomalieDetecteeEvent#notification}).
+   */
+  private void notifierEmployeDeSaPropreAnomalie(
+      UUID employeId, TypeAnomaliePointage type, LocalDate date) {
+    EmployeInfoPresence employe = employeInfo(employeId);
+    if (employe == null) {
+      return;
+    }
+    evenements.publishEvent(
+        new AnomalieDetecteeEvent(
+            employeId, employe.utilisateurId(), employe.nomComplet(), type, date));
   }
 
   /**
    * EF-ATT-11 : escalade sur récurrence — vérifiée après chaque nouvelle anomalie (pas seulement
    * détectée, réellement insérée : l'idempotence ci-dessus évite de re-vérifier pour un doublon).
+   *
+   * <p>Une seule alerte par "épisode" d'anomalies non résolues, portée par un drapeau sur
+   * l'anomalie elle-même ({@code aDeclencheAlerteSeuil}) plutôt que par une comparaison du compte
+   * courant au seuil : comparer un compte instantané (même avec {@code >=}) est fragile si le
+   * compte peut sauter directement au-dessus du seuil sans jamais l'égaler pile — par exemple si un
+   * Admin abaisse le seuil pendant qu'un employé a déjà des anomalies non résolues, le prochain
+   * comptage dépasse alors le nouveau seuil sans qu'aucune vérification n'ait eu lieu au moment
+   * exact du changement. Le drapeau persiste l'état "déjà notifié pour cet épisode" indépendamment
+   * de la valeur du compte, et se réinitialise naturellement (filtre {@code resolue=false}) une
+   * fois l'épisode résolu.
    */
-  private void verifierSeuilAnomalies(UUID employeId) {
+  private void verifierSeuilAnomalies(UUID employeId, AnomaliePointage anomalieDeclenchante) {
     PolitiqueAnomalies politique =
         politiqueAnomaliesRepository.findAll().stream().findFirst().orElse(null);
     if (politique == null) {
       return;
     }
     LocalDate depuis = LocalDate.now(ZONE).minusDays(politique.getPeriodeJours());
+
+    if (anomalieRepository
+        .existsByEmployeIdAndResolueFalseAndDatePointageGreaterThanEqualAndADeclencheAlerteSeuilTrue(
+            employeId, depuis)) {
+      return;
+    }
+
     long nombreAnomalies =
         anomalieRepository.countByEmployeIdAndResolueFalseAndDatePointageGreaterThanEqual(
             employeId, depuis);
-    if (nombreAnomalies != politique.getSeuilAnomalies()) {
-      // Notifie une seule fois au moment où le seuil est franchi, pas à chaque anomalie
-      // supplémentaire au-delà (sinon une spirale d'alertes répétées pour le même employé).
+    if (nombreAnomalies < politique.getSeuilAnomalies()) {
       return;
     }
     EmployeInfoPresence employe = employeInfo(employeId);
     if (employe == null) {
       return;
     }
+    anomalieDeclenchante.marquerADeclencheAlerteSeuil();
     evenements.publishEvent(
         new SeuilAnomaliesDepasseEvent(
             employeId,
@@ -204,7 +242,7 @@ public class PointageService {
     List<EmployeInfoPresence> resultats =
         jdbcTemplate.query(
             """
-            select e.nom, e.prenom, d.manager_id
+            select e.nom, e.prenom, e.utilisateur_id, d.manager_id
               from employes e
               left join departements d on d.id = e.departement_id
              where e.id = ?
@@ -212,26 +250,44 @@ public class PointageService {
             (rs, rowNum) ->
                 new EmployeInfoPresence(
                     rs.getString("prenom") + " " + rs.getString("nom"),
-                    (UUID) rs.getObject("manager_id")),
+                    (UUID) rs.getObject("manager_id"),
+                    (UUID) rs.getObject("utilisateur_id")),
             employeId);
     return resultats.isEmpty() ? null : resultats.get(0);
   }
 
-  private record EmployeInfoPresence(String nomComplet, UUID managerId) {}
+  private record EmployeInfoPresence(String nomComplet, UUID managerId, UUID utilisateurId) {}
 
   /**
    * Calcule la durée de présence effective pour un employé sur une journée (EF-ATT-03). Déduit
-   * automatiquement la pause midi d'1h si entrée le matin et sortie l'après-midi.
+   * automatiquement la pause déjeuner, dont la durée vient de l'horaire de référence en vigueur ce
+   * jour-là (repli sur {@link #PAUSE_MIDI} si aucun horaire n'est encore configuré).
    */
   @Transactional(readOnly = true)
   public Duration calculerDureeJour(UUID employeId, LocalDate date) {
     Instant debut = date.atStartOfDay(ZONE).toInstant();
     Instant fin = date.plusDays(1).atStartOfDay(ZONE).toInstant();
     List<Pointage> pointages = pointageRepository.findByEmployeIdAndJour(employeId, debut, fin);
-    return dureeDepuisPointages(pointages);
+    return dureeDepuisPointages(pointages, pauseMidiA(date));
   }
 
-  private static Duration dureeDepuisPointages(List<Pointage> pointages) {
+  /**
+   * Pas de champ dédié pour la pause déjeuner : elle est déduite de l'écart entre {@code
+   * heureFinMatin} et {@code heureDebutApresMidi} de l'horaire en vigueur — un champ séparé
+   * pourrait se contredire avec ces deux heures (ex. 13h/14h saisis mais une pause à 30 min
+   * ailleurs). Repli sur {@link #PAUSE_MIDI} si aucun horaire configuré, ou si l'écart est nul ou
+   * négatif (horaire mal saisi).
+   */
+  private Duration pauseMidiA(LocalDate date) {
+    HoraireReference horaire = horaireReferenceService.trouverEnVigueurA(date);
+    if (horaire == null) {
+      return PAUSE_MIDI;
+    }
+    Duration ecart = Duration.between(horaire.getHeureFinMatin(), horaire.getHeureDebutApresMidi());
+    return ecart.isPositive() ? ecart : PAUSE_MIDI;
+  }
+
+  private static Duration dureeDepuisPointages(List<Pointage> pointages, Duration pauseMidi) {
     Instant entree = null;
     Duration total = Duration.ZERO;
     for (Pointage p : pointages) {
@@ -243,16 +299,23 @@ public class PointageService {
         entree = null;
       }
     }
-    // Déduire la pause de 1h si la journée couvre la plage midi
-    if (!total.isNegative() && !total.isZero() && total.compareTo(PAUSE_MIDI) > 0) {
-      total = total.minus(PAUSE_MIDI);
+    // Déduire la pause déjeuner si la journée couvre la plage midi
+    if (!total.isNegative() && !total.isZero() && total.compareTo(pauseMidi) > 0) {
+      total = total.minus(pauseMidi);
     }
     return total;
   }
 
+  /** EF-ATT-05 : historique filtrable (employé, type de scan, période). */
   @Transactional(readOnly = true)
-  public Page<Pointage> lister(Pageable pageable) {
-    return pointageRepository.findAll(pageable);
+  public Page<Pointage> lister(
+      UUID employeId,
+      TypeScanPointage typeScan,
+      LocalDate debut,
+      LocalDate fin,
+      Pageable pageable) {
+    return pointageRepository.findAll(
+        PointageSpecifications.filtrer(employeId, typeScan, debut, fin), pageable);
   }
 
   @Transactional(readOnly = true)
@@ -280,9 +343,8 @@ public class PointageService {
    * télétravail distingué de l'absence réelle ; un congé approuvé est distingué de la même façon,
    * cf. {@link #congesApprouves} — pas dans le texte EF-ATT-10 d'origine, ajouté le 2026-07-27 en
    * testant l'export : un congé validé rendait "Absence" comme un vrai no-show, trompeur pour un
-   * lecteur RH). Samedi et dimanche exclus (entreprise fermée le week-end), même convention que
-   * {@code AdministrativeService.duree()}. Les jours fériés ne sont volontairement pas exclus ici,
-   * cohérent avec le moteur d'anomalies (EF-ATT-04) qui ne les consulte pas non plus aujourd'hui.
+   * lecteur RH). Samedi, dimanche et jours fériés exclus (entreprise fermée), même convention que
+   * {@code AdministrativeService.duree()}.
    */
   @Transactional(readOnly = true)
   public byte[] exporter(FormatExport format, UUID employeId, LocalDate debut, LocalDate fin) {
@@ -302,6 +364,7 @@ public class PointageService {
             .findByEmployeIdInAndHorodatageBetween(employeIds, debutInstant, finInstant)
             .stream()
             .collect(Collectors.groupingBy(Pointage::getEmployeId));
+    Set<LocalDate> joursFeries = joursFeriesEntre(debut, fin);
 
     List<List<String>> lignes = new ArrayList<>();
     for (UUID id : employeIds) {
@@ -312,14 +375,168 @@ public class PointageService {
       List<Pointage> pointagesEmploye = pointagesParEmploye.getOrDefault(id, List.of());
       List<PeriodeCongeApprouve> conges = congesApprouves(id, debut, fin);
       for (LocalDate jour = debut; !jour.isAfter(fin); jour = jour.plusDays(1)) {
-        if (jour.getDayOfWeek() == DayOfWeek.SUNDAY || jour.getDayOfWeek() == DayOfWeek.SATURDAY) {
+        if (jour.getDayOfWeek() == DayOfWeek.SUNDAY
+            || jour.getDayOfWeek() == DayOfWeek.SATURDAY
+            || joursFeries.contains(jour)) {
           continue;
         }
-        lignes.add(ligneExportJour(nomComplet, jour, plannings, pointagesEmploye, conges));
+        lignes.add(
+            ligneExportJour(
+                nomComplet, jour, plannings, pointagesEmploye, conges, pauseMidiA(jour)));
       }
     }
     return tableauExportService.generer(
         format, "Feuille de présence", ENTETES_EXPORT_PRESENCE, lignes);
+  }
+
+  /**
+   * Tableau de bord Présence : taux de couverture sur les 30 derniers jours calendaires complets
+   * (aujourd'hui exclu, pas encore terminé), employés avec le plus d'anomalies non résolues
+   * récurrentes, répartition des anomalies par type. Même périmètre que {@link #exporter} (équipe
+   * du Manager, tout le monde pour un Admin).
+   */
+  @Transactional(readOnly = true)
+  public PresenceDashboardReponse tableauDeBord() {
+    List<UUID> employeIds = employesDansPerimetre(null);
+    LocalDate fin = LocalDate.now(ZONE).minusDays(1);
+    LocalDate debut = fin.minusDays(29);
+
+    if (employeIds.isEmpty()) {
+      return new PresenceDashboardReponse(0, 0, List.of(), List.of());
+    }
+
+    long joursOuvres = joursOuvresEntre(debut, fin);
+    double taux = calculerTauxCouverture(employeIds, debut, fin, joursOuvres);
+
+    List<AnomalieLigne> anomalies =
+        anomaliesEntre(debut, fin).stream()
+            .filter(l -> employeIds.contains(l.employeId()))
+            .toList();
+
+    List<PresenceDashboardReponse.AnomalieEmployeReponse> topAnomaliesRecurrentes =
+        anomalies.stream()
+            .filter(l -> !l.resolue())
+            .collect(Collectors.groupingBy(AnomalieLigne::employeId, Collectors.counting()))
+            .entrySet()
+            .stream()
+            .sorted(Map.Entry.<UUID, Long>comparingByValue().reversed())
+            .limit(5)
+            .map(
+                e -> {
+                  EmployeInfoPresence employe = employeInfo(e.getKey());
+                  String nomComplet =
+                      employe == null ? e.getKey().toString() : employe.nomComplet();
+                  return new PresenceDashboardReponse.AnomalieEmployeReponse(
+                      e.getKey(), nomComplet, e.getValue());
+                })
+            .toList();
+
+    List<PresenceDashboardReponse.RepartitionTypeAnomalieReponse> repartitionParType =
+        anomalies.stream()
+            .collect(Collectors.groupingBy(AnomalieLigne::type, Collectors.counting()))
+            .entrySet()
+            .stream()
+            .map(
+                e ->
+                    new PresenceDashboardReponse.RepartitionTypeAnomalieReponse(
+                        e.getKey(), e.getValue()))
+            .toList();
+
+    return new PresenceDashboardReponse(
+        taux, joursOuvres, topAnomaliesRecurrentes, repartitionParType);
+  }
+
+  private long joursOuvresEntre(LocalDate debut, LocalDate fin) {
+    Set<LocalDate> joursFeries = joursFeriesEntre(debut, fin);
+    long total = 0;
+    for (LocalDate jour = debut; !jour.isAfter(fin); jour = jour.plusDays(1)) {
+      if (jour.getDayOfWeek() == DayOfWeek.SUNDAY
+          || jour.getDayOfWeek() == DayOfWeek.SATURDAY
+          || joursFeries.contains(jour)) {
+        continue;
+      }
+      total++;
+    }
+    return total;
+  }
+
+  /**
+   * Un jour est "couvert" (ni absence, ni anomalie de check-out) s'il est Présent, Télétravail ou
+   * Congé — réutilise la même classification que {@link #ligneExportJour} plutôt que d'en dupliquer
+   * la logique, seul le statut (index 3 de la ligne) nous intéresse ici.
+   */
+  private double calculerTauxCouverture(
+      List<UUID> employeIds, LocalDate debut, LocalDate fin, long joursOuvres) {
+    if (joursOuvres == 0) {
+      return 0;
+    }
+    Instant debutInstant = debut.atStartOfDay(ZONE).toInstant();
+    Instant finInstant = fin.plusDays(1).atStartOfDay(ZONE).toInstant();
+    Map<UUID, List<Pointage>> pointagesParEmploye =
+        pointageRepository
+            .findByEmployeIdInAndHorodatageBetween(employeIds, debutInstant, finInstant)
+            .stream()
+            .collect(Collectors.groupingBy(Pointage::getEmployeId));
+    Set<LocalDate> joursFeries = joursFeriesEntre(debut, fin);
+
+    long joursCouverts = 0;
+    for (UUID id : employeIds) {
+      List<PlanningTeletravail> plannings =
+          planningTeletravailRepository.findByEmployeIdOrderByDateDebutDesc(id);
+      List<Pointage> pointagesEmploye = pointagesParEmploye.getOrDefault(id, List.of());
+      List<PeriodeCongeApprouve> conges = congesApprouves(id, debut, fin);
+      for (LocalDate jour = debut; !jour.isAfter(fin); jour = jour.plusDays(1)) {
+        if (jour.getDayOfWeek() == DayOfWeek.SUNDAY
+            || jour.getDayOfWeek() == DayOfWeek.SATURDAY
+            || joursFeries.contains(jour)) {
+          continue;
+        }
+        String statut =
+            ligneExportJour("", jour, plannings, pointagesEmploye, conges, pauseMidiA(jour)).get(3);
+        if (!"Absence".equals(statut) && !statut.startsWith("Anomalie")) {
+          joursCouverts++;
+        }
+      }
+    }
+    return 100.0 * joursCouverts / (joursOuvres * employeIds.size());
+  }
+
+  private List<AnomalieLigne> anomaliesEntre(LocalDate debut, LocalDate fin) {
+    return jdbcTemplate.query(
+        "select employe_id, type_anomalie, resolue from anomalies_pointage"
+            + " where date_pointage between ? and ?",
+        (rs, rowNum) ->
+            new AnomalieLigne(
+                (UUID) rs.getObject("employe_id"),
+                TypeAnomaliePointage.valueOf(rs.getString("type_anomalie")),
+                rs.getBoolean("resolue")),
+        debut,
+        fin);
+  }
+
+  private record AnomalieLigne(UUID employeId, TypeAnomaliePointage type, boolean resolue) {}
+
+  /**
+   * EF-ATT-04/EF-EXP-02 : jours fériés (module administratif, table {@code jours_feries}) exclus du
+   * calcul de présence, au même titre que le week-end. Lecture SQL brute plutôt qu'injection du
+   * service administratif (package-private, non exporté hors de {@code ma.hbdev.rh.administrative})
+   * — même principe que {@link #congesApprouves}.
+   */
+  private Set<LocalDate> joursFeriesEntre(LocalDate debut, LocalDate fin) {
+    return new HashSet<>(
+        jdbcTemplate.queryForList(
+            "select date_ferie from jours_feries where date_ferie between ? and ?",
+            LocalDate.class,
+            debut,
+            fin));
+  }
+
+  /** Vrai si {@code date} est un jour férié déclaré (module administratif). */
+  boolean estJourFerie(LocalDate date) {
+    Integer compte =
+        jdbcTemplate.queryForObject(
+            "select count(*) from jours_feries where date_ferie = ?", Integer.class, date);
+    return compte != null && compte > 0;
   }
 
   // Lecture brute dans la table de administrative (pas d'appel à son service/repository — même
@@ -370,7 +587,8 @@ public class PointageService {
       LocalDate jour,
       List<PlanningTeletravail> plannings,
       List<Pointage> pointagesEmploye,
-      List<PeriodeCongeApprouve> conges) {
+      List<PeriodeCongeApprouve> conges,
+      Duration pauseMidi) {
     TypeJourSemaine jourSemaine = TypeJourSemaine.depuis(jour.getDayOfWeek());
     boolean enConge =
         conges.stream().anyMatch(c -> !jour.isBefore(c.debut()) && !jour.isAfter(c.fin()));
@@ -403,7 +621,7 @@ public class PointageService {
       duree = "";
     } else if (aEntree && aSortie) {
       statut = "Présent";
-      duree = formatDuree(dureeDepuisPointages(pointagesJour));
+      duree = formatDuree(dureeDepuisPointages(pointagesJour, pauseMidi));
     } else if (aEntree) {
       statut = "Anomalie (pas de sortie)";
       duree = "";

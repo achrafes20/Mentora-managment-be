@@ -1,5 +1,6 @@
 package ma.hbdev.rh.attendance;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -7,15 +8,17 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Moteur de détection des anomalies de pointage (EF-ATT-04). Les anomalies "retard" et "départ
- * anticipé" sont détectées en temps réel dans {@link PointageService}. Les anomalies "absence de
- * checkout" et "présence incomplète" sont générées chaque nuit à 01h00 via le job planifié {@link
+ * anticipé" sont détectées en temps réel dans {@link PointageService}. L'anomalie "absence de
+ * checkout" est générée chaque nuit à 01h00 via le job planifié {@link
  * #detecterAnomaliesNocturnes()} qui examine la journée précédente pour tous les employés ayant
  * pointé.
  *
@@ -51,25 +54,44 @@ public class AnomalieService {
   /** Job nocturne : détecte les anomalies de la journée précédente (01h00 chaque nuit). */
   @Scheduled(cron = "0 0 1 * * *", zone = "Africa/Casablanca")
   public void detecterAnomaliesNocturnes() {
-    LocalDate hier = LocalDate.now(ZONE).minusDays(1);
-    LOG.info("Détection anomalies nocturnes pour {}", hier);
+    detecterAnomaliesPourJournee(LocalDate.now(ZONE).minusDays(1));
+  }
 
-    java.time.Instant debut = hier.atStartOfDay(ZONE).toInstant();
-    java.time.Instant fin = hier.plusDays(1).atStartOfDay(ZONE).toInstant();
+  /**
+   * Cœur de la détection nocturne, séparé du déclencheur cron ci-dessus pour rester testable sur
+   * une date choisie plutôt que dépendre de l'horloge réelle (utile pour cibler un jour ouvré
+   * précis en test, sans attendre ou mocker {@code LocalDate.now()}).
+   */
+  void detecterAnomaliesPourJournee(LocalDate jour) {
+    // EF-ATT-04 : jour non ouvré (week-end ou jour férié déclaré) — l'entreprise étant fermée,
+    // l'absence de scan ce jour-là n'a rien d'anormal. Explicite plutôt que de compter sur
+    // employesAvecPointage vide (personne ne scanne un jour fermé) : plus clair et robuste si ce
+    // comportement change un jour.
+    if (jour.getDayOfWeek() == DayOfWeek.SATURDAY
+        || jour.getDayOfWeek() == DayOfWeek.SUNDAY
+        || pointageService.estJourFerie(jour)) {
+      LOG.info("Jour non ouvré ({}), détection d'anomalies nocturnes ignorée", jour);
+      return;
+    }
 
-    // Récupère tous les employés ayant eu au moins un pointage hier
+    LOG.info("Détection anomalies nocturnes pour {}", jour);
+
+    java.time.Instant debut = jour.atStartOfDay(ZONE).toInstant();
+    java.time.Instant fin = jour.plusDays(1).atStartOfDay(ZONE).toInstant();
+
+    // Récupère tous les employés ayant eu au moins un pointage ce jour-là
     List<UUID> employesAvecPointage =
         pointageRepository.findEmployeIdsAvecPointageEntre(debut, fin);
 
-    HoraireReference horaire = horaireReferenceService.trouverEnVigueurA(hier);
+    HoraireReference horaire = horaireReferenceService.trouverEnVigueurA(jour);
     if (horaire == null) {
       LOG.warn(
-          "Aucun horaire de référence en vigueur pour {} — anomalies nocturnes ignorées", hier);
+          "Aucun horaire de référence en vigueur pour {} — anomalies nocturnes ignorées", jour);
       return;
     }
 
     for (UUID employeId : employesAvecPointage) {
-      analyserJourPourEmploye(employeId, hier, horaire);
+      analyserJourPourEmploye(employeId, jour, horaire);
     }
   }
 
@@ -94,23 +116,35 @@ public class AnomalieService {
             .findFirst()
             .orElse(null);
 
+    // employeId vient de findEmployeIdsAvecPointageEntre (au moins un pointage ce jour-là) : le
+    // cas "ni entrée ni sortie" n'est donc pas atteignable ici — seul aEntree && !aSortie reste
+    // possible (ex-anomalie "presence_incomplete" retirée, cf. V23, car jamais générée en
+    // pratique).
     if (aEntree && !aSortie) {
-      // Entré mais pas sorti → absence_checkout
       pointageService.enregistrerAnomalieIdempotent(
           employeId, date, TypeAnomaliePointage.absence_checkout, entreeId, null);
-    } else if (!aEntree && !aSortie) {
-      // Aucun scan → présence incomplète (absent sans justification)
-      pointageService.enregistrerAnomalieIdempotent(
-          employeId, date, TypeAnomaliePointage.presence_incomplete, null, null);
     }
   }
 
+  /**
+   * EF-ATT-04/05 : liste filtrable (employé, type, résolue, période), triée par défaut du plus
+   * récent au plus ancien.
+   */
   @Transactional(readOnly = true)
-  public Page<AnomaliePointage> lister(Boolean resolue, Pageable pageable) {
-    if (resolue != null) {
-      return anomalieRepository.findByResolueOrderByCreeLeDesc(resolue, pageable);
-    }
-    return anomalieRepository.findAllByOrderByCreeLeDesc(pageable);
+  public Page<AnomaliePointage> lister(
+      UUID employeId,
+      TypeAnomaliePointage type,
+      Boolean resolue,
+      LocalDate debut,
+      LocalDate fin,
+      Pageable pageable) {
+    Pageable pageableTrie =
+        PageRequest.of(
+            pageable.getPageNumber(),
+            pageable.getPageSize(),
+            pageable.getSortOr(Sort.by(Sort.Direction.DESC, "creeLe")));
+    return anomalieRepository.findAll(
+        AnomalieSpecifications.filtrer(employeId, type, resolue, debut, fin), pageableTrie);
   }
 
   public AnomaliePointage marquerResolue(UUID id) {

@@ -57,6 +57,7 @@ class EmployeIntegrationTest {
   @Autowired private EmployeTransfertRepository transfertRepository;
   @Autowired private EmployeDocumentRepository documentRepository;
   @Autowired private EmployeRepository employeRepository;
+  @Autowired private EmployeService employeService;
   @Autowired private UserRepository userRepository;
   @Autowired private SessionRepository sessionRepository;
   @Autowired private PasswordEncoder passwordEncoder;
@@ -113,8 +114,12 @@ class EmployeIntegrationTest {
   }
 
   private void nettoyerTracesTransverses() {
+    // notifications_planifiees référence employe_id (FK) : sans ce nettoyage, tout employé encore
+    // référencé (CDD/stage avec une date de fin future ayant déclenché une notification planifiée
+    // via SurveillancePlanifieeService) bloque le employeRepository.deleteAll() du test suivant.
     jdbcTemplate.execute(
-        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit");
+        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit,"
+            + " notifications_planifiees");
   }
 
   private String login(String email, String motDePasse) throws Exception {
@@ -226,6 +231,44 @@ class EmployeIntegrationTest {
                 .header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].nouveauDepartementId").value(autreDepartementId.toString()));
+  }
+
+  @Test
+  void creeUnEmployeAvecSexeEtLeRestitueDansLaReponse() throws Exception {
+    String requete =
+        """
+        {"nom":"Bennani","prenom":"Fatima","email":"fatima.bennani@test.ma",
+         "departementId":"%s","dateEmbauche":"2024-01-15","typeContrat":"CDI","sexe":"FEMME"}
+        """
+            .formatted(departementId);
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requete))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.sexe").value("FEMME"));
+  }
+
+  @Test
+  void creeUnEmployeAvecCinEtLaRestitueDansLaReponse() throws Exception {
+    String requete =
+        """
+        {"nom":"Idrissi","prenom":"Youssef","email":"youssef.idrissi@test.ma",
+         "departementId":"%s","dateEmbauche":"2024-01-15","typeContrat":"CDI","cin":"AB123456"}
+        """
+            .formatted(departementId);
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requete))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.cin").value("AB123456"));
   }
 
   @Test
@@ -673,5 +716,110 @@ class EmployeIntegrationTest {
       assertThat(feuille.getRow(1).getCell(2).getStringCellValue())
           .isEqualTo("equipe.export@test.ma");
     }
+  }
+
+  @Test
+  void desactiveAutomatiquementUnCddDontLaDateDeFinEstDepassee() throws Exception {
+    String reponseCreation =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(requeteCreation("cdd.expire@test.ma", "CDD", "2020-01-31")))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID id = UUID.fromString(objectMapper.readTree(reponseCreation).at("/data/id").asText());
+
+    employeService.desactiverContratsExpires();
+
+    Employe employe = employeRepository.findById(id).orElseThrow();
+    assertThat(employe.getStatut()).isEqualTo(StatutActifInactif.inactif);
+    assertThat(employe.getMotifDepart()).isEqualTo(MotifDepartEmploye.fin_cdd);
+    assertThat(employe.getDateDepart()).isEqualTo(java.time.LocalDate.of(2020, 1, 31));
+  }
+
+  @Test
+  void desactiveAutomatiquementUnStageDontLaDateDeFinEstDepassee() throws Exception {
+    String reponseCreation =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        requeteCreationAvecFinStage(
+                            "stage.expire@test.ma", "STAGIAIRE", "2020-03-15")))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID id = UUID.fromString(objectMapper.readTree(reponseCreation).at("/data/id").asText());
+
+    employeService.desactiverContratsExpires();
+
+    Employe employe = employeRepository.findById(id).orElseThrow();
+    assertThat(employe.getStatut()).isEqualTo(StatutActifInactif.inactif);
+    assertThat(employe.getMotifDepart()).isEqualTo(MotifDepartEmploye.fin_stage);
+    assertThat(employe.getDateDepart()).isEqualTo(java.time.LocalDate.of(2020, 3, 15));
+  }
+
+  @Test
+  void neDesactivePasUnCddDontLaDateDeFinEstFuture() throws Exception {
+    String reponseCreation =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(requeteCreation("cdd.futur@test.ma", "CDD", "2099-12-31")))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID id = UUID.fromString(objectMapper.readTree(reponseCreation).at("/data/id").asText());
+
+    employeService.desactiverContratsExpires();
+
+    Employe employe = employeRepository.findById(id).orElseThrow();
+    assertThat(employe.getStatut()).isEqualTo(StatutActifInactif.actif);
+  }
+
+  @Test
+  void desactiveImmediatementQuandUneModificationRendUneDateFinDeContratPassee() throws Exception {
+    String reponseCreation =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(requeteCreation("cdd.corrige@test.ma", "CDD", "2099-12-31")))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID id = UUID.fromString(objectMapper.readTree(reponseCreation).at("/data/id").asText());
+
+    String requeteModif =
+        """
+        {"nom":"Dupont","prenom":"Jean","email":"cdd.corrige@test.ma","telephone":"0600000000",
+         "poste":"Dev","dateEmbauche":"2024-01-15","typeContrat":"CDD","dateFinContratPrevue":"2020-05-31"}
+        """;
+
+    mockMvc
+        .perform(
+            put("/api/employes/{id}", id)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requeteModif))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.statut").value("inactif"));
+
+    Employe employe = employeRepository.findById(id).orElseThrow();
+    assertThat(employe.getStatut()).isEqualTo(StatutActifInactif.inactif);
+    assertThat(employe.getMotifDepart()).isEqualTo(MotifDepartEmploye.fin_cdd);
+    assertThat(employe.getDateDepart()).isEqualTo(java.time.LocalDate.of(2020, 5, 31));
   }
 }

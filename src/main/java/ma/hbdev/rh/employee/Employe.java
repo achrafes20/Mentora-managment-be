@@ -74,6 +74,20 @@ class Employe {
   @Column(name = "photo_fichier_id")
   private UUID photoFichierId;
 
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  @Column
+  private SexeEmploye sexe;
+
+  // Affichée sur l'attestation de travail (EF-DOC, document actif) — optionnelle, aucune reprise
+  // de données réelle par migration (V17).
+  @Column private String cin;
+
+  // EF-EMP-01 : optionnel, saisi à la création pour un STAGIAIRE/STAGIAIRE_REMUNERE. Sans objet
+  // pour les autres types de contrat.
+  @Column(name = "sujet_stage")
+  private String sujetStage;
+
   // EF-EMP-05/EF-REC-13 : renseigné uniquement quand la fiche est créée depuis une candidature
   // recrutement passée au statut "Embauché" — jamais de ligne créée automatiquement, l'Admin
   // complète et soumet le formulaire normal (cf. plan T3.B1, décision verrouillée avec Taha :
@@ -101,7 +115,10 @@ class Employe {
       TypeContratEmploye typeContrat,
       LocalDate dateFinContratPrevue,
       LocalDate dateFinStagePrevue,
-      UUID candidatureOrigineId) {
+      UUID candidatureOrigineId,
+      SexeEmploye sexe,
+      String cin,
+      String sujetStage) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -114,6 +131,9 @@ class Employe {
     this.dateFinContratPrevue = dateFinContratPrevue;
     this.dateFinStagePrevue = dateFinStagePrevue;
     this.candidatureOrigineId = candidatureOrigineId;
+    this.sexe = sexe;
+    this.cin = cin;
+    this.sujetStage = sujetStage;
   }
 
   void modifier(
@@ -125,7 +145,10 @@ class Employe {
       LocalDate dateEmbauche,
       TypeContratEmploye typeContrat,
       LocalDate dateFinContratPrevue,
-      LocalDate dateFinStagePrevue) {
+      LocalDate dateFinStagePrevue,
+      SexeEmploye sexe,
+      String cin,
+      String sujetStage) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -135,6 +158,9 @@ class Employe {
     this.typeContrat = typeContrat;
     this.dateFinContratPrevue = dateFinContratPrevue;
     this.dateFinStagePrevue = dateFinStagePrevue;
+    this.sexe = sexe;
+    this.cin = cin;
+    this.sujetStage = sujetStage;
   }
 
   void transferer(Departement nouveauDepartement, UUID nouveauManagerId) {
@@ -150,6 +176,10 @@ class Employe {
 
   void definirPhoto(UUID fichierId) {
     this.photoFichierId = fichierId;
+  }
+
+  void definirSujetStage(String sujetStage) {
+    this.sujetStage = sujetStage;
   }
 
   UUID getId() {
@@ -214,6 +244,18 @@ class Employe {
 
   UUID getPhotoFichierId() {
     return photoFichierId;
+  }
+
+  SexeEmploye getSexe() {
+    return sexe;
+  }
+
+  String getCin() {
+    return cin;
+  }
+
+  String getSujetStage() {
+    return sujetStage;
   }
 
   UUID getCandidatureOrigineId() {

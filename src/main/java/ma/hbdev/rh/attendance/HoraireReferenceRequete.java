@@ -4,7 +4,12 @@ import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
-/** Requête de création/modification d'un horaire de référence (EF-ATT-07). */
+/**
+ * Requête de création/modification d'un horaire de référence (EF-ATT-07). Pas de champ dédié pour
+ * la pause déjeuner : elle est déduite de l'écart entre {@code heureFinMatin} et {@code
+ * heureDebutApresMidi} (cf. {@link PointageService#pauseMidiA}) — un champ séparé pourrait se
+ * contredire avec ces deux heures.
+ */
 public record HoraireReferenceRequete(
     @NotNull LocalTime heureDebutMatin,
     @NotNull LocalTime heureFinMatin,

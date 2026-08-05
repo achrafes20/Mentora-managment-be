@@ -23,6 +23,9 @@ public record EmployeReponse(
     String statut,
     UUID photoFichierId,
     UUID candidatureOrigineId,
+    String sexe,
+    String cin,
+    String sujetStage,
     Instant creeLe,
     Instant modifieLe) {
 
@@ -46,6 +49,9 @@ public record EmployeReponse(
         employe.getStatut().name(),
         employe.getPhotoFichierId(),
         employe.getCandidatureOrigineId(),
+        employe.getSexe() == null ? null : employe.getSexe().name(),
+        employe.getCin(),
+        employe.getSujetStage(),
         employe.getCreeLe(),
         employe.getModifieLe());
   }

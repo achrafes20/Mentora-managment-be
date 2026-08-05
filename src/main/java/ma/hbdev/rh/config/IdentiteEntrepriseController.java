@@ -67,8 +67,33 @@ public class IdentiteEntrepriseController {
         .body(logo.ressource());
   }
 
+  @PostMapping("/signature")
+  @Operation(summary = "Téléverser (ou remplacer) la signature/cachet de l'entreprise")
+  public ApiResponse<IdentiteEntrepriseReponse> televerserSignature(
+      @RequestPart MultipartFile signature) {
+    return ApiResponse.ok(service.televerserSignature(signature, CurrentUser.id().orElse(null)));
+  }
+
+  @GetMapping("/signature")
+  @Operation(summary = "Télécharger la signature/cachet de l'entreprise")
+  public ResponseEntity<Resource> recupererSignature() {
+    SignatureEntrepriseTelecharge signature = service.recupererSignature();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(signature.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.inline().filename("signature").build().toString())
+        .body(signature.ressource());
+  }
+
   @ExceptionHandler(LogoEntrepriseIntrouvableException.class)
   ResponseEntity<ApiResponse<Void>> gererLogoIntrouvable(LogoEntrepriseIntrouvableException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(SignatureEntrepriseIntrouvableException.class)
+  ResponseEntity<ApiResponse<Void>> gererSignatureIntrouvable(
+      SignatureEntrepriseIntrouvableException ex) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
   }
 }
