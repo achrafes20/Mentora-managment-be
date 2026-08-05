@@ -163,7 +163,7 @@ class RecruitmentIntegrationTest {
                         new OffreEmploiRequete("Autre poste", null, departementId, null))))
         .andExpect(status().isForbidden());
 
-    mockMvc.perform(get("/api/offres")).andExpect(status().isForbidden());
+    mockMvc.perform(get("/api/offres")).andExpect(status().isUnauthorized());
   }
 
   @Test
@@ -486,7 +486,9 @@ class RecruitmentIntegrationTest {
                 .param("sujet", "Non lié"))
         .andExpect(status().isCreated());
 
-    mockMvc.perform(post("/api/candidatures/archiver-expirees")).andExpect(status().isForbidden());
+    mockMvc
+        .perform(post("/api/candidatures/archiver-expirees"))
+        .andExpect(status().isUnauthorized());
 
     mockMvc
         .perform(

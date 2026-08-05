@@ -247,6 +247,55 @@ class EmployeIntegrationTest {
         .andExpect(status().isConflict());
   }
 
+  // Régression : nom/prenom acceptaient une chaîne vide (@NotNull sans @NotBlank ne rejette pas
+  // "", seulement null) — un employé sans nom était créé sans erreur.
+  @Test
+  void refuseUnNomOuPrenomVide() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"nom":"","prenom":"Test","departementId":"%s","dateEmbauche":"2024-01-15",
+                     "typeContrat":"CDI"}
+                    """
+                        .formatted(departementId)))
+        .andExpect(status().isBadRequest());
+
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"nom":"Test","prenom":"   ","departementId":"%s","dateEmbauche":"2024-01-15",
+                     "typeContrat":"CDI"}
+                    """
+                        .formatted(departementId)))
+        .andExpect(status().isBadRequest());
+  }
+
+  // Régression : email n'avait aucune contrainte @Email — un format invalide était persisté tel
+  // quel.
+  @Test
+  void refuseUnEmailAuFormatInvalide() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"nom":"Test","prenom":"BadEmail","email":"not-an-email",
+                     "departementId":"%s","dateEmbauche":"2024-01-15","typeContrat":"CDI"}
+                    """
+                        .formatted(departementId)))
+        .andExpect(status().isBadRequest());
+  }
+
   @Test
   void accepteDateFinContratSurCddEtLaRefuseAilleurs() throws Exception {
     mockMvc
@@ -264,6 +313,17 @@ class EmployeIntegrationTest {
                 .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requeteCreation("cdi-avec-date@test.ma", "CDI", "2024-12-31")))
+        .andExpect(status().isBadRequest());
+
+    // Régression : un CDD sans date de fin était accepté (201) — la surveillance J-15/J-3
+    // (EF-DOC-12→14, T4.A1) ne se déclenchait alors jamais pour cet employé, sans qu'aucune
+    // erreur ne le signale à la création.
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requeteCreation("cdd-sans-date@test.ma", "CDD", null)))
         .andExpect(status().isBadRequest());
   }
 
@@ -308,6 +368,17 @@ class EmployeIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     requeteCreationAvecFinStage("cdd-avec-fin-stage@test.ma", "CDD", "2024-08-31")))
+        .andExpect(status().isBadRequest());
+
+    // Régression, même raisonnement que le CDD ci-dessus : un stagiaire sans date de fin de
+    // stage était accepté (201), désactivant silencieusement la surveillance J-3.
+    mockMvc
+        .perform(
+            post("/api/employes")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    requeteCreationAvecFinStage("stagiaire-sans-date@test.ma", "STAGIAIRE", null)))
         .andExpect(status().isBadRequest());
   }
 
@@ -411,11 +482,11 @@ class EmployeIntegrationTest {
                     "Content-Disposition", org.hamcrest.Matchers.containsString("contrat.pdf")));
   }
 
-  // Cf. DepartementIntegrationTest#requeteAnonymeEstRefusee : pas d'AuthenticationEntryPoint
-  // personnalisé -> Http403ForbiddenEntryPoint par défaut, donc 403 pour un principal anonyme.
+  // Cf. DepartementIntegrationTest#requeteAnonymeEstRefusee : ApiAuthenticationEntryPoint répond
+  // 401 pour un principal anonyme.
   @Test
   void requeteAnonymeEstRefusee() throws Exception {
-    mockMvc.perform(get("/api/employes")).andExpect(status().isForbidden());
+    mockMvc.perform(get("/api/employes")).andExpect(status().isUnauthorized());
   }
 
   @Test

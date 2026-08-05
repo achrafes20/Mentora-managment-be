@@ -234,6 +234,59 @@ class ImportIntegrationTest {
     assertThat(employeRepository.count()).isEqualTo(1);
   }
 
+  // Régression : une ligne sans e-mail stockait '' (chaîne vide) plutôt que NULL — sous la
+  // contrainte UNIQUE de employes.email, Postgres traite '' comme une valeur normale (contrairement
+  // à NULL, toujours distinct de lui-même), donc rejouer un import avec une seconde ligne sans
+  // e-mail violait la contrainte et faisait échouer tout le lot (500), pas seulement cette ligne —
+  // vu en conditions réelles en testant le rejeu documenté comme fonctionnalité (T2.B1).
+  @Test
+  void rejoueUnImportAvecPlusieursLignesSansEmailSansCollisionNiErreur500() throws Exception {
+    departementRepository.save(new Departement("Ingenierie", null));
+
+    String csv =
+        "Nom,Prenom,Email,Departement,DateEmbauche,TypeContrat\n"
+            + "SansEmail,Un,,Ingenierie,15/01/2024,CDI\n";
+    Map<String, Integer> mapping =
+        Map.of(
+            "nom", 0,
+            "prenom", 1,
+            "email", 2,
+            "departementNom", 3,
+            "dateEmbauche", 4,
+            "typeContrat", 5);
+
+    mockMvc
+        .perform(
+            multipart("/api/import/executer")
+                .file(fichierCsv(csv))
+                .file(mappingJson(mapping))
+                .param("cible", "EMPLOYES")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.lignes[0].action").value("CREATION"));
+
+    // Rejouer le même fichier : sans normalisation d'e-mail vide -> NULL, ce second appel
+    // renvoyait 500 (contrainte UNIQUE employes_email_key violée par deux chaînes vides) au lieu
+    // de créer une seconde fiche (comportement documenté : dédoublonnage impossible sans e-mail,
+    // une fiche recréée à chaque import).
+    mockMvc
+        .perform(
+            multipart("/api/import/executer")
+                .file(fichierCsv(csv))
+                .file(mappingJson(mapping))
+                .param("cible", "EMPLOYES")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.lignes[0].action").value("CREATION"));
+
+    assertThat(employeRepository.count()).isEqualTo(2);
+    Integer emailsNonNuls =
+        jdbcTemplate.queryForObject(
+            "select count(*) from employes where nom = 'SansEmail' and email is not null",
+            Integer.class);
+    assertThat(emailsNonNuls).isZero();
+  }
+
   @Test
   void signaleUneLigneEnErreurQuandLeDepartementEstIntrouvable() throws Exception {
     String csv =

@@ -30,10 +30,23 @@ class OpenRouterCvAnalysisProvider implements CvAnalysisProvider {
       "Tu analyses le texte extrait d'un CV de candidat pour un poste de recrutement. Réponds "
           + "UNIQUEMENT avec un objet JSON valide, sans texte ni markdown autour, avec exactement "
           + "ces clés : prenom, nom, email, telephone, intitulePoste (poste actuel ou recherché "
-          + "détecté sur le CV), scoreCorrespondance (nombre 0-100, correspondance avec l'offre "
-          + "décrite ci-dessous), anneesExperienceEstimees (nombre), justificationScore (texte "
-          + "court expliquant le score), motsCles (tableau de chaînes : compétences et "
-          + "technologies détectées sur le CV). Utilise null pour tout champ non détectable.\n\n";
+          + "détecté sur le CV), scoreCorrespondance, anneesExperienceEstimees (nombre), "
+          + "justificationScore, motsCles (tableau de chaînes : compétences et technologies "
+          + "détectées sur le CV). Utilise null pour tout champ non détectable.\n\n";
+
+  // Distinct de PROMPT_INSTRUCTIONS : sans offre associée (candidature spontanée, ou pas encore
+  // rattachée manuellement par l'Admin), demander quand même un score 0-100 "de correspondance
+  // avec l'offre" produit un nombre fabriqué sans rien de concret à comparer — vu en conditions
+  // réelles, le modèle a renvoyé 100 (le plus trompeur : lu comme un match parfait) faute
+  // d'instruction explicite de renvoyer null dans ce cas précis.
+  private static final String INSTRUCTIONS_SCORE_AVEC_OFFRE =
+      "scoreCorrespondance : nombre 0-100, correspondance avec l'offre décrite ci-dessous. "
+          + "justificationScore : texte court expliquant ce score.\n\n";
+
+  private static final String INSTRUCTIONS_SCORE_SANS_OFFRE =
+      "Aucune offre précise n'est associée à cette candidature : scoreCorrespondance et "
+          + "justificationScore n'ont rien de concret à évaluer — renvoie null pour ces deux "
+          + "champs plutôt qu'une estimation arbitraire.\n\n";
 
   private static final String URL_CHAT_COMPLETIONS =
       "https://openrouter.ai/api/v1/chat/completions";
@@ -103,9 +116,10 @@ class OpenRouterCvAnalysisProvider implements CvAnalysisProvider {
 
   private String construirePrompt(ContexteOffre contexte) {
     if (contexte == null) {
-      return PROMPT_INSTRUCTIONS;
+      return PROMPT_INSTRUCTIONS + INSTRUCTIONS_SCORE_SANS_OFFRE;
     }
     return PROMPT_INSTRUCTIONS
+        + INSTRUCTIONS_SCORE_AVEC_OFFRE
         + "Offre visée : "
         + nullVersVide(contexte.intitule())
         + "\nDescription : "

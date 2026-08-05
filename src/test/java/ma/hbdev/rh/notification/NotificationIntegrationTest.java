@@ -96,7 +96,7 @@ class NotificationIntegrationTest {
                     .andExpect(jsonPath("$.data.totalElements").value(1))
                     .andExpect(
                         jsonPath("$.data.content[0].titre")
-                            .value("Nouvel employe dans votre equipe"))
+                            .value("Nouvel employé dans votre équipe"))
                     .andExpect(jsonPath("$.data.content[0].lu").value(false))
                     .andExpect(jsonPath("$.data.content[0].mattermostTente").value(true))
                     .andExpect(jsonPath("$.data.content[0].mattermostReussi").value(false))

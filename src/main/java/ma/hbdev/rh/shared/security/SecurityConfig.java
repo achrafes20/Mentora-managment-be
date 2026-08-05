@@ -57,12 +57,18 @@ public class SecurityConfig {
   };
 
   private final JwtAuthenticationFilter jwtAuthenticationFilter;
+  private final ApiAuthenticationEntryPoint apiAuthenticationEntryPoint;
+  private final ApiAccessDeniedHandler apiAccessDeniedHandler;
   private final List<String> allowedOrigins;
 
   public SecurityConfig(
       JwtAuthenticationFilter jwtAuthenticationFilter,
+      ApiAuthenticationEntryPoint apiAuthenticationEntryPoint,
+      ApiAccessDeniedHandler apiAccessDeniedHandler,
       @Value("${app.cors.allowed-origins:http://localhost:5173}") List<String> allowedOrigins) {
     this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    this.apiAuthenticationEntryPoint = apiAuthenticationEntryPoint;
+    this.apiAccessDeniedHandler = apiAccessDeniedHandler;
     this.allowedOrigins = allowedOrigins;
   }
 
@@ -71,6 +77,16 @@ public class SecurityConfig {
     return http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        // Sans ça, un refus posé au niveau de la chaîne de filtres (pas d'authentification du
+        // tout, ou rôle insuffisant sur une règle requestMatchers ci-dessous) retombe sur le
+        // comportement par défaut de Spring Security : 403/401 à corps vide, hors du format
+        // ApiResponse. GlobalExceptionHandler ne peut pas le rattraper : il n'intercepte que les
+        // exceptions levées à l'intérieur du dispatch Spring MVC (ex. @PreAuthorize).
+        .exceptionHandling(
+            handling ->
+                handling
+                    .authenticationEntryPoint(apiAuthenticationEntryPoint)
+                    .accessDeniedHandler(apiAccessDeniedHandler))
         .authorizeHttpRequests(
             auth ->
                 // EndpointRequest (pas un simple requestMatchers(String)) : les endpoints
