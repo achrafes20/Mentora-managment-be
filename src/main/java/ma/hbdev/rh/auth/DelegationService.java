@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import ma.hbdev.rh.shared.event.NotificationMetier;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -62,7 +63,20 @@ public class DelegationService {
 
     DelegationApprobation saved = delegationRepository.save(delegation);
     log.info("Délégation créée : {} -> {}", adminDelegantId, requete.delegueId());
-    evenements.publishEvent(evenementPeriode(saved, DelegationPeriodeEvent.Phase.debut));
+    String adminNom = nomComplet(adminDelegantId);
+    String delegueNom = nomComplet(delegue);
+    evenements.publishEvent(DelegationModifieeEvent.creation(saved.getId(), adminNom, delegueNom));
+    notifierManagersActifs(
+        saved,
+        "Délégation d'approbation active",
+        delegueNom
+            + " exerce les droits d'approbation de "
+            + adminNom
+            + " (période : "
+            + saved.getDateDebut()
+            + " -> "
+            + saved.getDateFin()
+            + "). Adressez-lui vos demandes urgentes.");
     return DelegationReponse.depuis(saved);
   }
 
@@ -88,7 +102,11 @@ public class DelegationService {
 
     DelegationApprobation saved = delegationRepository.save(delegation);
     log.info("Délégation révoquée : {}", id);
-    evenements.publishEvent(evenementPeriode(saved, DelegationPeriodeEvent.Phase.fin));
+    String adminNom = nomComplet(saved.getAdminDelegantId());
+    String delegueNom = nomComplet(saved.getDelegueId());
+    evenements.publishEvent(
+        DelegationModifieeEvent.revocation(saved.getId(), adminNom, delegueNom));
+    notifierFinDelegation(saved, adminNom, delegueNom);
     return DelegationReponse.depuis(saved);
   }
 
@@ -107,19 +125,57 @@ public class DelegationService {
       delegation.setStatut(StatutDelegation.expiree);
       DelegationApprobation saved = delegationRepository.save(delegation);
       log.info("Délégation expirée automatiquement : {}", saved.getId());
-      evenements.publishEvent(evenementPeriode(saved, DelegationPeriodeEvent.Phase.fin));
+      String adminNom = nomComplet(saved.getAdminDelegantId());
+      String delegueNom = nomComplet(saved.getDelegueId());
+      evenements.publishEvent(
+          DelegationModifieeEvent.expirationAutomatique(saved.getId(), adminNom, delegueNom));
+      notifierFinDelegation(saved, adminNom, delegueNom);
     }
   }
 
-  private DelegationPeriodeEvent evenementPeriode(
-      DelegationApprobation delegation, DelegationPeriodeEvent.Phase phase) {
-    return new DelegationPeriodeEvent(
-        delegation.getId(),
-        phase,
-        delegation.getAdminDelegantId(),
-        delegation.getDelegueId(),
-        delegation.getDateDebut(),
-        delegation.getDateFin());
+  private void notifierFinDelegation(
+      DelegationApprobation delegation, String adminNom, String delegueNom) {
+    notifierManagersActifs(
+        delegation,
+        "Fin de délégation d'approbation",
+        "La délégation de "
+            + adminNom
+            + " vers "
+            + delegueNom
+            + " a pris fin. Les droits d'approbation reviennent à "
+            + adminNom
+            + ".");
+  }
+
+  /**
+   * EF-AUTH-15 : un événement par Manager actif, consommé par le mécanisme général à deux canaux
+   * (in-app garanti + tentative Mattermost persistée, {@code notification/}) — voir {@link
+   * DelegationNotificationManagerEvent} pour le détail de ce que ça corrige par rapport à l'ancien
+   * appel direct au client Mattermost.
+   */
+  private void notifierManagersActifs(
+      DelegationApprobation delegation, String titre, String message) {
+    userRepository
+        .findByRoleAndStatut(RoleUtilisateur.manager, StatutActifInactif.actif)
+        .forEach(
+            manager ->
+                evenements.publishEvent(
+                    new DelegationNotificationManagerEvent(
+                        delegation.getId(),
+                        NotificationMetier.creer(
+                            manager.getId(),
+                            "delegation_periode",
+                            titre,
+                            message,
+                            "/delegations"))));
+  }
+
+  private String nomComplet(UUID userId) {
+    return userRepository.findById(userId).map(this::nomComplet).orElse(null);
+  }
+
+  private String nomComplet(User user) {
+    return user.getPrenom() + " " + user.getNom();
   }
 
   /** Historique complet, le plus récent en premier — statut présenté avec expiration calculée. */
@@ -160,6 +216,21 @@ public class DelegationService {
   @Transactional(readOnly = true)
   public Optional<DelegationReponse> delegationActivePourUtilisateurCourant() {
     return delegationActiveEffectivePourUtilisateurCourant().map(DelegationReponse::depuis);
+  }
+
+  /**
+   * Vrai si la délégation désignée par {@code delegationId} est encore effectivement active — même
+   * filtre que {@link #delegationActiveEffectivePourUtilisateurCourant()} ci-dessous, mais pour une
+   * délégation connue par id plutôt que "celle de l'utilisateur courant". Consommé par
+   * KiosqueActivationService (NFR-UX-02) : un code d'activation kiosque émis par un délégué reste
+   * valide seulement pendant la fenêtre de sa délégation, sans mécanisme d'expiration séparé.
+   */
+  @Transactional(readOnly = true)
+  public boolean estActive(UUID delegationId) {
+    return delegationRepository
+        .findById(delegationId)
+        .map(DelegationApprobation::estEffectivementActive)
+        .orElse(false);
   }
 
   private Optional<DelegationApprobation> delegationActiveEffectivePourUtilisateurCourant() {

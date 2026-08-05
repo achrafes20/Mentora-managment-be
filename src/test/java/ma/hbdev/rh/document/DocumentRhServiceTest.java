@@ -11,6 +11,7 @@ import ma.hbdev.rh.employee.EmployeService;
 import ma.hbdev.rh.shared.file.FileStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.RestClient;
 
 class DocumentRhServiceTest {
@@ -21,6 +22,7 @@ class DocumentRhServiceTest {
   private FileStorageService fileStorageService;
   private NotificationPlanifieeRepository notificationPlanifieeRepository;
   private RestClient.ResponseSpec responseSpec;
+  private ApplicationEventPublisher evenements;
   private DocumentRhService service;
 
   @BeforeEach
@@ -30,6 +32,7 @@ class DocumentRhServiceTest {
     certificatGenerator = mock(CertificatGenerator.class);
     fileStorageService = mock(FileStorageService.class);
     notificationPlanifieeRepository = mock(NotificationPlanifieeRepository.class);
+    evenements = mock(ApplicationEventPublisher.class);
 
     RestClient.Builder builder = mock(RestClient.Builder.class);
     RestClient restClient = mock(RestClient.class);
@@ -57,7 +60,8 @@ class DocumentRhServiceTest {
             builder,
             "http://localhost:5678",
             "http://localhost:8080",
-            notificationPlanifieeRepository);
+            notificationPlanifieeRepository,
+            evenements);
   }
 
   private void stubEmployeEtCertificatStage(UUID employeId) {

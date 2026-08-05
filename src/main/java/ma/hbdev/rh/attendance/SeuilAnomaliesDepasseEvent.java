@@ -34,6 +34,16 @@ record SeuilAnomaliesDepasseEvent(
     return employeId;
   }
 
+  /**
+   * Alerte calculée automatiquement (franchissement de seuil), pas une décision d'une personne —
+   * notifiée au Manager (ci-dessous) mais volontairement absente de journal_audit, qui ne doit
+   * tracer que des actions attribuables à quelqu'un.
+   */
+  @Override
+  public boolean audite() {
+    return false;
+  }
+
   @Override
   public NotificationMetier notification() {
     if (managerId == null) {

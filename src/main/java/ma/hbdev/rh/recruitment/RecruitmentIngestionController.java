@@ -13,9 +13,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * Endpoints appelés uniquement par les workflows n8n (jamais par un utilisateur connecté) — {@code
- * permitAll()} dans {@code SecurityConfig}, protégés par {@link InternalWebhookGuard} (secret
- * partagé en en-tête) plutôt que par une session JWT.
+ * Endpoint appelé uniquement par le workflow n8n d'ingestion IMAP (jamais par un utilisateur
+ * connecté) — {@code permitAll()} dans {@code SecurityConfig}, protégé par {@link
+ * InternalWebhookGuard} (secret partagé en en-tête) plutôt que par une session JWT.
+ *
+ * <p>L'archivage des candidatures expirées (EF-REC-12) ne passe plus par ici — voir {@code
+ * CandidatureService#archivageQuotidien} (cron backend) et {@code
+ * CandidatureController#archiverExpirees} (déclenchement manuel Admin).
  */
 @RestController
 @RequestMapping("/api/recruitment")
@@ -24,15 +28,12 @@ public class RecruitmentIngestionController {
   private static final String EN_TETE_SECRET = "X-Internal-Webhook-Secret";
 
   private final CandidatureIngestionService candidatureIngestionService;
-  private final CandidatureService candidatureService;
   private final InternalWebhookGuard internalWebhookGuard;
 
   public RecruitmentIngestionController(
       CandidatureIngestionService candidatureIngestionService,
-      CandidatureService candidatureService,
       InternalWebhookGuard internalWebhookGuard) {
     this.candidatureIngestionService = candidatureIngestionService;
-    this.candidatureService = candidatureService;
     this.internalWebhookGuard = internalWebhookGuard;
   }
 
@@ -53,13 +54,5 @@ public class RecruitmentIngestionController {
         candidatureIngestionService.ingerer(
             emailExpediteur, nomExpediteur, sujet, corps, referenceSourceImport, cv);
     return ApiResponse.ok(CandidatureReponse.depuis(candidature));
-  }
-
-  // EF-REC-12 (tail) : n8n cron ping quotidien.
-  @PostMapping("/candidatures/archiver-expirees")
-  public ApiResponse<Integer> archiverExpirees(
-      @RequestHeader(value = EN_TETE_SECRET, required = false) String secret) {
-    internalWebhookGuard.verifier(secret);
-    return ApiResponse.ok(candidatureService.archiverExpirees());
   }
 }

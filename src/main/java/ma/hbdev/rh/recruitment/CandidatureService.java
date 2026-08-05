@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -138,7 +139,8 @@ class CandidatureService {
     validerTransition(candidature.getStatut(), nouveauStatut);
     candidature.changerStatut(nouveauStatut);
     evenements.publishEvent(
-        new CandidatureModifieEvent(candidature.getId(), "statut_" + nouveauStatut));
+        new CandidatureModifieEvent(
+            candidature.getId(), "statut_" + nouveauStatut, candidature.nomComplet()));
 
     if (nouveauStatut == StatutCandidature.entretien) {
       demarrerEntretien(candidature, managerId, dateEntretien);
@@ -164,7 +166,9 @@ class CandidatureService {
       throw new EntretienDejaResoluException(candidatureId);
     }
     entretien.reprogrammer(nouveauManagerId, nouvelleDate);
-    evenements.publishEvent(new CandidatureModifieEvent(candidatureId, "entretien_reprogramme"));
+    evenements.publishEvent(
+        new CandidatureModifieEvent(
+            candidatureId, "entretien_reprogramme", candidature.nomComplet()));
     return entretien;
   }
 
@@ -177,7 +181,9 @@ class CandidatureService {
       return;
     }
     candidature.changerStatut(StatutCandidature.decision);
-    evenements.publishEvent(new CandidatureModifieEvent(candidatureId, "statut_decision_auto"));
+    evenements.publishEvent(
+        new CandidatureModifieEvent(
+            candidatureId, "statut_decision_auto", candidature.nomComplet()));
   }
 
   @Transactional(readOnly = true)
@@ -199,11 +205,32 @@ class CandidatureService {
     }
     candidature.changerStatut(StatutCandidature.recu);
     evenements.publishEvent(
-        new CandidatureModifieEvent(candidature.getId(), "reactivation_validee"));
+        new CandidatureModifieEvent(
+            candidature.getId(), "reactivation_validee", candidature.nomComplet()));
     return candidature;
   }
 
-  // EF-REC-12 (fenêtre de rétention dépassée) : n8n cron ping, cf. n8n/README.md.
+  /**
+   * EF-REC-12 : déclencheur automatique de l'archivage, une fois par jour.
+   *
+   * <p>{@code @Scheduled} Spring plutôt qu'un ping cron n8n — rejoint le mécanisme déjà majoritaire
+   * dans le backend ({@code AnomalieService}, {@code DelegationService}, {@code
+   * NotificationService}, {@code SurveillancePlanifieeService}) et évite qu'une règle métier
+   * dépende de la disponibilité de n8n (ai-instructions.md règle 7, révisée en conséquence).
+   * L'endpoint manuel Admin ({@code CandidatureController#archiverExpirees}) reste disponible pour
+   * les rejeux.
+   *
+   * <p>{@code zone} explicite (Africa/Casablanca) : même motif que {@link
+   * ma.hbdev.rh.document.SurveillancePlanifieeService#balayageQuotidien()} — le Maroc suspend
+   * l'heure d'été pendant le Ramadan, on ne se repose jamais sur le fuseau par défaut de la JVM.
+   */
+  @Scheduled(cron = "${app.recruitment.archivage-cron:0 30 3 * * *}", zone = "Africa/Casablanca")
+  void archivageQuotidien() {
+    archiverExpirees();
+  }
+
+  // EF-REC-12 (fenêtre de rétention dépassée) : appelée par le cron ci-dessus et par le
+  // déclenchement manuel Admin (CandidatureController).
   int archiverExpirees() {
     Instant seuil = Instant.now().minus(fenetreRetentionMois * 30L, ChronoUnit.DAYS);
     List<Candidature> expirees =
@@ -211,7 +238,9 @@ class CandidatureService {
             StatutCandidature.en_attente, seuil);
     expirees.forEach(Candidature::archiver);
     expirees.forEach(
-        c -> evenements.publishEvent(new CandidatureModifieEvent(c.getId(), "archivage_auto")));
+        c ->
+            evenements.publishEvent(
+                new CandidatureModifieEvent(c.getId(), "archivage_auto", c.nomComplet())));
     return expirees.size();
   }
 

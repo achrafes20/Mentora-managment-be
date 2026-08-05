@@ -139,7 +139,11 @@ public class EmployeService {
             new Employe(
                 requete.nom(),
                 requete.prenom(),
-                requete.email(),
+                // blancVersNull : un e-mail vide persisté tel quel (chaîne vide, pas NULL)
+                // collisionne avec un autre employé sans e-mail sous la contrainte UNIQUE dès le
+                // deuxième cas (Postgres ne traite que NULL comme distinct de lui-même) — vu en
+                // conditions réelles sur un rejeu d'import (T2.B1).
+                blancVersNull(requete.email()),
                 requete.telephone(),
                 requete.poste(),
                 departement,
@@ -176,7 +180,7 @@ public class EmployeService {
     employe.modifier(
         requete.nom(),
         requete.prenom(),
-        requete.email(),
+        blancVersNull(requete.email()),
         requete.telephone(),
         requete.poste(),
         requete.dateEmbauche(),
@@ -186,7 +190,7 @@ public class EmployeService {
         requete.sexe(),
         requete.cin(),
         requete.sujetStage());
-    evenements.publishEvent(new EmployeModifieEvent(id, "modification"));
+    evenements.publishEvent(new EmployeModifieEvent(id, "modification", nomComplet(employe)));
     // EF-EMP-XX : si la nouvelle date de fin saisie est déjà dépassée, désactiver tout de suite
     // plutôt que d'attendre le prochain passage du balayage quotidien (02h30) — sinon un Admin qui
     // corrige rétroactivement une date de fin de contrat verrait l'employé rester "actif" jusqu'au
@@ -201,7 +205,7 @@ public class EmployeService {
   Employe modifierSujetStage(UUID id, String sujetStage) {
     Employe employe = trouver(id);
     employe.definirSujetStage(sujetStage);
-    evenements.publishEvent(new EmployeModifieEvent(id, "modification"));
+    evenements.publishEvent(new EmployeModifieEvent(id, "modification", nomComplet(employe)));
     return employe;
   }
 
@@ -221,14 +225,14 @@ public class EmployeService {
             requete.nouveauManagerId(),
             requete.dateEffet(),
             effectuePar));
-    evenements.publishEvent(new EmployeModifieEvent(id, "transfert"));
+    evenements.publishEvent(new EmployeModifieEvent(id, "transfert", nomComplet(employe)));
     return employe;
   }
 
   void desactiver(UUID id, DesactivationRequete requete) {
     Employe employe = trouver(id);
     employe.desactiver(requete.motif(), requete.dateDepart());
-    evenements.publishEvent(new EmployeModifieEvent(id, "desactivation"));
+    evenements.publishEvent(new EmployeModifieEvent(id, "desactivation", nomComplet(employe)));
   }
 
   /**
@@ -247,7 +251,8 @@ public class EmployeService {
         employeRepository.findByStatutAndTypeContratAndDateFinContratPrevueLessThan(
             StatutActifInactif.actif, TypeContratEmploye.CDD, aujourdHui)) {
       employe.desactiver(MotifDepartEmploye.fin_cdd, employe.getDateFinContratPrevue());
-      evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+      evenements.publishEvent(
+          new EmployeModifieEvent(employe.getId(), "desactivation_auto", nomComplet(employe)));
     }
     for (Employe employe :
         employeRepository.findByStatutAndTypeContratInAndDateFinStagePrevueLessThan(
@@ -255,7 +260,8 @@ public class EmployeService {
             List.of(TypeContratEmploye.STAGIAIRE, TypeContratEmploye.STAGIAIRE_REMUNERE),
             aujourdHui)) {
       employe.desactiver(MotifDepartEmploye.fin_stage, employe.getDateFinStagePrevue());
-      evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+      evenements.publishEvent(
+          new EmployeModifieEvent(employe.getId(), "desactivation_auto", nomComplet(employe)));
     }
   }
 
@@ -273,14 +279,16 @@ public class EmployeService {
       LocalDate finContrat = employe.getDateFinContratPrevue();
       if (finContrat != null && finContrat.isBefore(aujourdHui)) {
         employe.desactiver(MotifDepartEmploye.fin_cdd, finContrat);
-        evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+        evenements.publishEvent(
+            new EmployeModifieEvent(employe.getId(), "desactivation_auto", nomComplet(employe)));
       }
     } else if (employe.getTypeContrat() == TypeContratEmploye.STAGIAIRE
         || employe.getTypeContrat() == TypeContratEmploye.STAGIAIRE_REMUNERE) {
       LocalDate finStage = employe.getDateFinStagePrevue();
       if (finStage != null && finStage.isBefore(aujourdHui)) {
         employe.desactiver(MotifDepartEmploye.fin_stage, finStage);
-        evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+        evenements.publishEvent(
+            new EmployeModifieEvent(employe.getId(), "desactivation_auto", nomComplet(employe)));
       }
     }
   }
@@ -293,12 +301,13 @@ public class EmployeService {
 
   EmployeDocumentReponse attacherDocument(
       UUID employeId, MultipartFile fichier, String typeDocument, UUID televersePar) {
-    trouver(employeId);
+    Employe employe = trouver(employeId);
     var uploade = fileStorageService.televerser(fichier, televersePar);
     EmployeDocument document =
         documentRepository.save(
             new EmployeDocument(employeId, uploade.id(), typeDocument, televersePar));
-    evenements.publishEvent(new EmployeModifieEvent(employeId, "document_ajoute"));
+    evenements.publishEvent(
+        new EmployeModifieEvent(employeId, "document_ajoute", nomComplet(employe)));
     return EmployeDocumentReponse.depuis(document, uploade);
   }
 
@@ -332,7 +341,8 @@ public class EmployeService {
     validerPhoto(fichier);
     var uploade = fileStorageService.televerser(fichier, televersePar);
     employe.definirPhoto(uploade.id());
-    evenements.publishEvent(new EmployeModifieEvent(employeId, "photo_mise_a_jour"));
+    evenements.publishEvent(
+        new EmployeModifieEvent(employeId, "photo_mise_a_jour", nomComplet(employe)));
     return employe;
   }
 
@@ -348,14 +358,15 @@ public class EmployeService {
   }
 
   void supprimerDocument(UUID employeId, UUID documentId) {
-    trouver(employeId);
+    Employe employe = trouver(employeId);
     EmployeDocument document =
         documentRepository
             .findById(documentId)
             .filter(d -> d.getEmployeId().equals(employeId))
             .orElseThrow(() -> new EmployeDocumentIntrouvableException(documentId));
     documentRepository.delete(document);
-    evenements.publishEvent(new EmployeModifieEvent(employeId, "document_supprime"));
+    evenements.publishEvent(
+        new EmployeModifieEvent(employeId, "document_supprime", nomComplet(employe)));
   }
 
   EmployeDocumentReponse remplacerDocument(
@@ -381,7 +392,8 @@ public class EmployeService {
       throw new EmployeSansEmailException();
     }
     mailService.sendEmail(destinataire, requete.objet(), requete.corps());
-    evenements.publishEvent(new EmployeModifieEvent(employeId, "carte_email_envoyee"));
+    evenements.publishEvent(
+        new EmployeModifieEvent(employeId, "carte_email_envoyee", nomComplet(employe)));
   }
 
   private void validerPhoto(MultipartFile fichier) {
@@ -412,8 +424,12 @@ public class EmployeService {
 
   private void validerDateFinContrat(
       TypeContratEmploye typeContrat, LocalDate dateFinContratPrevue) {
-    if (typeContrat != TypeContratEmploye.CDD && dateFinContratPrevue != null) {
-      throw new DateFinContratInvalideException();
+    boolean estCdd = typeContrat == TypeContratEmploye.CDD;
+    if (!estCdd && dateFinContratPrevue != null) {
+      throw DateFinContratInvalideException.nonApplicable();
+    }
+    if (estCdd && dateFinContratPrevue == null) {
+      throw DateFinContratInvalideException.requise();
     }
   }
 
@@ -422,8 +438,15 @@ public class EmployeService {
         typeContrat == TypeContratEmploye.STAGIAIRE
             || typeContrat == TypeContratEmploye.STAGIAIRE_REMUNERE;
     if (!estStagiaire && dateFinStagePrevue != null) {
-      throw new DateFinStageInvalideException();
+      throw DateFinStageInvalideException.nonApplicable();
     }
+    if (estStagiaire && dateFinStagePrevue == null) {
+      throw DateFinStageInvalideException.requise();
+    }
+  }
+
+  private static String nomComplet(Employe employe) {
+    return employe.getPrenom() + " " + employe.getNom();
   }
 
   private static String blancVersNull(String valeur) {

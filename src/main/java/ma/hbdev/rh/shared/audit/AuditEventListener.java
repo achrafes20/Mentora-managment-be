@@ -23,6 +23,9 @@ class AuditEventListener {
   @EventListener
   @Order(30)
   void journaliser(EvenementMetier evenement) {
+    if (!evenement.audite()) {
+      return;
+    }
     JsonNode details = objectMapper.valueToTree(evenement.details());
     UUID delegationId =
         evenement.decisionDelegable() ? delegationService.delegationActiveId().orElse(null) : null;

@@ -40,12 +40,12 @@ record DemandeAdministrativeEvent(
     if (managerId == null || !("approbation".equals(action) || "rejet".equals(action))) {
       return null;
     }
-    String decision = "approbation".equals(action) ? "approuvee" : "rejetee";
+    String decision = "approbation".equals(action) ? "approuvée" : "rejetée";
     return NotificationMetier.creer(
         managerId,
         "demande_decidee",
         "Demande administrative " + decision,
-        "La demande de " + employeNomComplet + " a ete " + decision + ".",
+        "La demande de " + employeNomComplet + " a été " + decision + ".",
         "/demandes");
   }
 }

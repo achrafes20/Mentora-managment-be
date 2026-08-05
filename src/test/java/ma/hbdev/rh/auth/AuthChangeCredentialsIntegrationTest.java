@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -42,12 +43,16 @@ class AuthChangeCredentialsIntegrationTest {
   @Autowired private SessionRepository sessionRepository;
   @Autowired private PasswordEncoder passwordEncoder;
   @Autowired private ObjectMapper objectMapper;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private User testUser;
   private User autreUser;
 
   @BeforeEach
   void setUp() {
+    // journal_audit référence utilisateurs (NFR-SEC-03, comptes désormais audités) : à vider
+    // avant, sinon userRepository.deleteAll() ci-dessous viole la FK dès le 2e test.
+    jdbcTemplate.execute("TRUNCATE TABLE journal_audit");
     sessionRepository.deleteAll();
     userRepository.deleteAll();
 
@@ -97,7 +102,7 @@ class AuthChangeCredentialsIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(new ChangeEmailRequest("nouveau@hbdev.ma"))))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isUnauthorized());
   }
 
   @Test
@@ -197,7 +202,7 @@ class AuthChangeCredentialsIntegrationTest {
                 .content(
                     objectMapper.writeValueAsString(
                         new ChangePasswordRequest("Password@2025", "Nouveau@2025"))))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isUnauthorized());
   }
 
   @Test

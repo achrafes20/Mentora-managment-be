@@ -85,7 +85,7 @@ class SurveillancePlanifieeServiceTest {
             null);
     when(employeService.recuperer(employeId)).thenReturn(employe);
 
-    service.gererEvenementEmploye(new EmployeModifieEvent(employeId, "creation"));
+    service.gererEvenementEmploye(new EmployeModifieEvent(employeId, "creation", "Test Employe"));
 
     verify(repository).save(any(NotificationPlanifiee.class));
   }
@@ -123,7 +123,7 @@ class SurveillancePlanifieeServiceTest {
             null);
     when(employeService.recuperer(employeId)).thenReturn(employe);
 
-    service.gererEvenementEmploye(new EmployeModifieEvent(employeId, "creation"));
+    service.gererEvenementEmploye(new EmployeModifieEvent(employeId, "creation", "Test Employe"));
 
     org.mockito.Mockito.verify(repository, org.mockito.Mockito.never())
         .save(any(NotificationPlanifiee.class));

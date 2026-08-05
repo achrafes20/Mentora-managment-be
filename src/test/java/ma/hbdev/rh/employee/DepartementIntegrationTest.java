@@ -187,13 +187,19 @@ class DepartementIntegrationTest {
         .andExpect(status().isNotFound());
   }
 
-  // Pas de AuthenticationEntryPoint personnalisé dans SecurityConfig -> Spring Security retombe
-  // sur Http403ForbiddenEntryPoint pour un principal anonyme, donc 403 et non 401 ici (le 401 du
-  // GlobalExceptionHandler ne couvre que le cas "jeton présent mais invalide/expiré", géré
-  // explicitement par JwtAuthenticationFilter).
+  // ApiAuthenticationEntryPoint (SecurityConfig) répond 401 pour un principal anonyme — même
+  // convention que GlobalExceptionHandler#handleAuthentication pour un jeton présent mais
+  // invalide/expiré, désormais cohérente que le refus vienne de la chaîne de filtres ou du
+  // dispatch Spring MVC. Régression : avant ApiAuthenticationEntryPoint, ce cas retombait sur le
+  // comportement par défaut de Spring Security — 403 à corps vide, hors du format ApiResponse — le
+  // corps est donc vérifié ici, pas seulement le statut.
   @Test
   void requeteAnonymeEstRefusee() throws Exception {
-    mockMvc.perform(get("/api/departements")).andExpect(status().isForbidden());
+    mockMvc
+        .perform(get("/api/departements"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error").value("Authentification requise"));
   }
 
   @Test

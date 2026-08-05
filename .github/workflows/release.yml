@@ -11,6 +11,10 @@ jobs:
     name: Build et scan de l'image backend
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Récupération du code
         uses: actions/checkout@v4
@@ -23,9 +27,8 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          # Aucun registre n'est encore configuré : l'image est construite et scannée
-          # localement dans le runner, jamais publiée. Étape de push à ajouter (GHCR,
-          # tag sha-<court>) — cf. docs/04-deploiement.md §2.1.
+          # Construite et chargée localement dans le runner ; le push vers GHCR se fait
+          # plus bas, une fois le scan Trivy passé (étape "Tag et push de l'image").
           push: false
           load: true
           tags: mentora-backend:${{ github.sha }}, mentora-backend:latest
@@ -41,13 +44,32 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag et push de l'image
+        id: push
+        run: |
+          docker tag mentora-backend:${{ github.sha }} ghcr.io/mentora-ma/mentora-management-be:latest
+          docker tag mentora-backend:${{ github.sha }} ghcr.io/mentora-ma/mentora-management-be:sha-${GITHUB_SHA::7}
+          docker push ghcr.io/mentora-ma/mentora-management-be:latest
+          docker push ghcr.io/mentora-ma/mentora-management-be:sha-${GITHUB_SHA::7}
+
       - name: Publication du résultat dans le récapitulatif du run
         if: always()
         run: |
           {
             echo "## Scan de vulnérabilités — image backend"
             echo
-            echo "Image : \`mentora-backend:${{ github.sha }}\` (construite localement, non publiée)."
+            if [ "${{ steps.push.outcome }}" = "success" ]; then
+              echo "Image : \`ghcr.io/mentora-ma/mentora-management-be:${{ github.sha }}\` (scannée et publiée sur GHCR)."
+            else
+              echo "Image : \`mentora-backend:${{ github.sha }}\` (scannée localement — **non publiée**, le scan ou la publication a échoué ou a été sautée)."
+            fi
             echo
             echo "Politique : \`CRITICAL,HIGH\`, \`ignore-unfixed: true\`, types \`os,library\`."
             echo

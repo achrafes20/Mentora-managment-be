@@ -60,6 +60,7 @@ class AttendanceIntegrationTest {
 
   private String adminToken;
   private String managerToken;
+  private String deviceToken;
 
   @BeforeEach
   void authentifierAdmin() throws Exception {
@@ -71,9 +72,9 @@ class AttendanceIntegrationTest {
     jdbcTemplate.execute(
         """
         truncate table notifications_mattermost, notifications_in_app, journal_audit,
-          pointages, anomalies_pointage, qr_codes, mouvements_conges, demandes_administratives,
-          employes, departements, sessions_utilisateur, horaires_reference,
-          plannings_teletravail
+          pointages, anomalies_pointage, qr_codes, kiosque_activations, mouvements_conges,
+          demandes_administratives, employes, departements, sessions_utilisateur,
+          horaires_reference, plannings_teletravail
         cascade
         """);
     // politique_anomalies (EF-ATT-11) est une donnée de référence seedée par V12, jamais recréée
@@ -127,6 +128,37 @@ class AttendanceIntegrationTest {
             .readTree(resultManager.getResponse().getContentAsString())
             .at("/data/token")
             .asText();
+
+    // NFR-UX-02 : /api/kiosque/scan exige un jeton d'appareil activé — un appareil de test
+    // l'obtient
+    // une fois ici pour que les tests existants (déjà focalisés sur le scan lui-même) n'aient pas à
+    // rejouer le flux d'activation à chaque fois. Ce flux est testé pour lui-même séparément (cf.
+    // gereLActivationKiosqueAvecVerrouillageEtRevocation).
+    deviceToken = activerAppareilKiosqueDeTest();
+  }
+
+  private String activerAppareilKiosqueDeTest() throws Exception {
+    String resGenerer =
+        mockMvc
+            .perform(
+                post("/api/kiosque/activations").header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String code = objectMapper.readTree(resGenerer).at("/data/code").asText();
+
+    String resVerifier =
+        mockMvc
+            .perform(
+                post("/api/kiosque/activation/verifier")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new CodeActivationRequete(code))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(resVerifier).at("/data/jetonAppareil").asText();
   }
 
   @Test
@@ -190,6 +222,7 @@ class AttendanceIntegrationTest {
     mockMvc
         .perform(
             post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", deviceToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(scanReqEntree))
         .andExpect(status().isOk())
@@ -199,6 +232,7 @@ class AttendanceIntegrationTest {
     mockMvc
         .perform(
             post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", deviceToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(scanReqEntree))
         .andExpect(status().isConflict());
@@ -209,6 +243,7 @@ class AttendanceIntegrationTest {
     mockMvc
         .perform(
             post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", deviceToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(scanReqSortie))
         .andExpect(status().isOk())
@@ -473,7 +508,10 @@ class AttendanceIntegrationTest {
     String resScan =
         mockMvc
             .perform(
-                post("/api/kiosque/scan").contentType(MediaType.APPLICATION_JSON).content(scanReq))
+                post("/api/kiosque/scan")
+                    .header("X-Kiosque-Device-Token", deviceToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(scanReq))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -843,6 +881,235 @@ class AttendanceIntegrationTest {
             jsonPath("$.data.repartitionParType[?(@.type == 'retard')].nombre")
                 .value(
                     org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.greaterThanOrEqualTo(1))));
+  }
+
+  // Régression : détection "retard"/"départ anticipé" en temps réel
+  // (PointageService#detecterAnomalieImmediate, appelée depuis un vrai scan kiosque) ne
+  // consultait pas le planning télétravail — seul AnomalieService#analyserJourPourEmploye (job
+  // nocturne, couvert ci-dessus par gereLePlanningTeletravailEtCourtCircuiteLaDetectionDAnomalies)
+  // le faisait. Un employé en télétravail qui scanne quand même (dépose un dossier au bureau,
+  // scénario hybride courant chez HB) se faisait donc marquer en retard à tort.
+  @Test
+  void scanTardifEnTeletravailNeCreePasDAnomalieImmediateMaisUnTemoinSansPlanningOui()
+      throws Exception {
+    // heureDebutMatin=00:00 + tolérance 0 : n'importe quelle heure réelle d'exécution du test est
+    // "après la limite d'arrivée", pour ne pas dépendre de l'heure du poste qui lance la suite.
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"00:00:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"23:59:00",
+                     "toleranceMinutes":0,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employeTeletravail =
+        creerEmployeAvecQrCode(
+            "TeletravailImmediat", "teletravail.immediat@hbdev.ma", "0600000007");
+    UUID employeTemoin =
+        creerEmployeAvecQrCode("TemoinImmediat", "temoin.immediat@hbdev.ma", "0600000008");
+
+    // Planning couvrant tous les jours (comme le test nocturne ci-dessus) pour ne pas dépendre du
+    // jour d'exécution réel.
+    mockMvc
+        .perform(
+            post("/api/employes/{id}/teletravail", employeTeletravail)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"dateDebut":"2020-01-01","dateFin":null,
+                     "jours":["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"]}
+                    """))
+        .andExpect(status().isCreated());
+
+    scannerEntree(employeTeletravail);
+    scannerEntree(employeTemoin);
+
+    LocalDate aujourdHui = LocalDate.now(ZoneId.of("Africa/Casablanca"));
+    Integer anomaliesTeletravail =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ?",
+            Integer.class,
+            employeTeletravail,
+            aujourdHui);
+    assertThat(anomaliesTeletravail).isZero();
+
+    Integer anomaliesTemoin =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ? "
+                + "and type_anomalie = 'retard'",
+            Integer.class,
+            employeTemoin,
+            aujourdHui);
+    assertThat(anomaliesTemoin).isEqualTo(1);
+  }
+
+  private void scannerEntree(UUID employeId) throws Exception {
+    String valeurQr =
+        jdbcTemplate.queryForObject(
+            "select valeur from qr_codes where employe_id = ? and actif = true",
+            String.class,
+            employeId);
+    String scanReq =
+        objectMapper.writeValueAsString(new ScanRequete(valeurQr, TypeScanPointage.entree));
+    mockMvc
+        .perform(
+            post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", deviceToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(scanReq))
+        .andExpect(status().isOk());
+  }
+
+  // NFR-UX-02 : jeton d'activation par appareil — remplace le permitAll() inconditionnel du
+  // kiosque.
+  @Test
+  void gereLActivationKiosqueAvecVerrouillageEtRevocation() throws Exception {
+    UUID employeId = creerEmployeAvecQrCode("Kiosque", "kiosque@hbdev.ma", "0600000007");
+    String valeurQr =
+        jdbcTemplate.queryForObject(
+            "select valeur from qr_codes where employe_id = ? and actif = true",
+            String.class,
+            employeId);
+    String scanReq =
+        objectMapper.writeValueAsString(new ScanRequete(valeurQr, TypeScanPointage.entree));
+
+    // Sans jeton d'appareil -> refusé, même avec un QR code valide (l'appareil de @BeforeEach
+    // n'est pas utilisé ici : ce test vérifie le flux d'activation lui-même).
+    mockMvc
+        .perform(post("/api/kiosque/scan").contentType(MediaType.APPLICATION_JSON).content(scanReq))
+        .andExpect(status().isUnauthorized());
+
+    // Génération réservée à l'Admin (ou délégué actif) : le Manager n'a pas le droit.
+    mockMvc
+        .perform(post("/api/kiosque/activations").header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(post("/api/kiosque/activations").header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isCreated());
+
+    // 5 tentatives erronées -> le code le plus récent en attente se verrouille, même politique que
+    // le verrouillage de compte (AuthService#handleFailedAttempt). La réponse du 5e essai porte
+    // déjà la date de déverrouillage (décompte côté UI), pas seulement un message générique.
+    for (int i = 0; i < 4; i++) {
+      mockMvc
+          .perform(
+              post("/api/kiosque/activation/verifier")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(objectMapper.writeValueAsString(new CodeActivationRequete("XXXXXX"))))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.data").doesNotExist());
+    }
+    mockMvc
+        .perform(
+            post("/api/kiosque/activation/verifier")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CodeActivationRequete("XXXXXX"))))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.data.verrouilleJusquA").exists());
+    Instant verrouilleJusquA =
+        jdbcTemplate.queryForObject(
+            "select verrouille_jusqu_a from kiosque_activations order by emis_le desc limit 1",
+            Instant.class);
+    assertThat(verrouilleJusquA).isAfter(Instant.now());
+
+    // Un essai de plus pendant le verrouillage porte lui aussi la date de déverrouillage.
+    mockMvc
+        .perform(
+            post("/api/kiosque/activation/verifier")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CodeActivationRequete("XXXXXX"))))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.data.verrouilleJusquA").exists());
+
+    // Un second code, indépendant du premier (verrouillé) -> activation réussie.
+    String resCode =
+        mockMvc
+            .perform(
+                post("/api/kiosque/activations").header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String code = objectMapper.readTree(resCode).at("/data/code").asText();
+    String activationId = objectMapper.readTree(resCode).at("/data/id").asText();
+
+    String resVerifier =
+        mockMvc
+            .perform(
+                post("/api/kiosque/activation/verifier")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new CodeActivationRequete(code))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String jeton = objectMapper.readTree(resVerifier).at("/data/jetonAppareil").asText();
+
+    // Ressaisir ce même code (déjà consommé) -> message distinct, pas "invalide" comme une vraie
+    // faute de frappe, et surtout pas pénalisé (rien à verrouiller, ce n'est pas une devinette).
+    mockMvc
+        .perform(
+            post("/api/kiosque/activation/verifier")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CodeActivationRequete(code))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error").value("Ce code a déjà été utilisé."));
+
+    mockMvc
+        .perform(get("/api/kiosque/activation/statut").header("X-Kiosque-Device-Token", jeton))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.actif").value(true));
+
+    mockMvc
+        .perform(
+            post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", jeton)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(scanReq))
+        .andExpect(status().isOk());
+
+    // Révocation réservée à l'Admin (ou délégué actif) -> l'appareil perd son accès.
+    mockMvc
+        .perform(
+            post("/api/kiosque/activations/{id}/revoquer", activationId)
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            post("/api/kiosque/activations/{id}/revoquer", activationId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(get("/api/kiosque/activation/statut").header("X-Kiosque-Device-Token", jeton))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.actif").value(false));
+
+    mockMvc
+        .perform(
+            post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", jeton)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(scanReq))
+        .andExpect(status().isUnauthorized());
+
+    // Même message pour un code révoqué que pour un code activé — "déjà utilisé" couvre les deux
+    // états consommés, cf. KiosqueActivationService#verifierCode.
+    mockMvc
+        .perform(
+            post("/api/kiosque/activation/verifier")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CodeActivationRequete(code))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error").value("Ce code a déjà été utilisé."));
   }
 
   // Les scans réels horodatent toujours Instant.now() (kiosque) : impossible de simuler "hier" par
