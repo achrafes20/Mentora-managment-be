@@ -32,4 +32,6 @@ public record EmployeRequete(
     // `candidatures`, seulement l'UUID d'un fichier déjà stocké (ai-instructions.md règle 4).
     UUID cvFichierId,
     SexeEmploye sexe,
-    String cin) {}
+    String cin,
+    // Optionnel, sans objet hors STAGIAIRE/STAGIAIRE_REMUNERE (cf. Employe#sujetStage).
+    String sujetStage) {}

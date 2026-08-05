@@ -1,6 +1,7 @@
 package ma.hbdev.rh.document;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.employee.EmployeReponse;
 import ma.hbdev.rh.employee.EmployeService;
@@ -47,6 +48,17 @@ class DocumentRhService {
     this.webhookUrl = MailService.urlWebhookNotifyEmail(n8nBaseUrl);
     this.apiBaseUrl = apiBaseUrl.replaceAll("/+$", "");
     this.notificationPlanifieeRepository = notificationPlanifieeRepository;
+  }
+
+  // EF-AUTH-03 : recuperer() applique le périmètre Manager (propre département) avant d'exposer
+  // l'historique — sans cet appel, un Manager pourrait lister l'historique de n'importe quel
+  // employeId en le devinant, malgré la restriction de lecture voulue.
+  @Transactional(readOnly = true)
+  List<EnvoiDocumentResponse> listerEnvois(UUID employeId) {
+    employeService.recuperer(employeId);
+    return envoiDocumentRepository.findByEmployeIdOrderByDateEnvoiDesc(employeId).stream()
+        .map(EnvoiDocumentResponse::depuis)
+        .toList();
   }
 
   EnvoiDocument renvoyerDepuisSurveillance(UUID notifId, UUID envoyePar) {

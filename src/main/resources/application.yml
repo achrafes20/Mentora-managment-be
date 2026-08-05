@@ -118,6 +118,13 @@ app:
       require-lowercase: ${SECURITY_PASSWORD_REQUIRE_LOWERCASE:true}
       require-digit: ${SECURITY_PASSWORD_REQUIRE_DIGIT:true}
     session-inactivite-minutes: ${SECURITY_SESSION_INACTIVITE_MINUTES:30}
+  # --- Employés : désactivation automatique des CDD/stages arrivés à échéance. ---
+  employes:
+    # 02h30 (Casablanca), avant le balayage de surveillance des documents (03h00) : un employé
+    # désactivé avant que ce dernier tourne évite de générer une relance pour un contrat déjà
+    # terminé (EmployeService#desactiverContratsExpires annule de toute façon la surveillance
+    # encore en attente via EmployeModifieEvent, mais autant ne pas dépendre de l'ordre).
+    desactivation-cron: ${EMPLOYES_DESACTIVATION_CRON:0 30 2 * * *}
   # --- Recrutement (EF-REC-12) : suggestion de réactivation des candidatures "En attente". ---
   recruitment:
     reactivation:

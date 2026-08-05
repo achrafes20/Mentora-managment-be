@@ -17,8 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Moteur de détection des anomalies de pointage (EF-ATT-04). Les anomalies "retard" et "départ
- * anticipé" sont détectées en temps réel dans {@link PointageService}. Les anomalies "absence de
- * checkout" et "présence incomplète" sont générées chaque nuit à 01h00 via le job planifié {@link
+ * anticipé" sont détectées en temps réel dans {@link PointageService}. L'anomalie "absence de
+ * checkout" est générée chaque nuit à 01h00 via le job planifié {@link
  * #detecterAnomaliesNocturnes()} qui examine la journée précédente pour tous les employés ayant
  * pointé.
  *
@@ -117,14 +117,13 @@ public class AnomalieService {
             .findFirst()
             .orElse(null);
 
+    // employeId vient de findEmployeIdsAvecPointageEntre (au moins un pointage ce jour-là) : le
+    // cas "ni entrée ni sortie" n'est donc pas atteignable ici — seul aEntree && !aSortie reste
+    // possible (ex-anomalie "presence_incomplete" retirée, cf. V23, car jamais générée en
+    // pratique).
     if (aEntree && !aSortie) {
-      // Entré mais pas sorti → absence_checkout
       pointageService.enregistrerAnomalieIdempotent(
           employeId, date, TypeAnomaliePointage.absence_checkout, entreeId, null);
-    } else if (!aEntree && !aSortie) {
-      // Aucun scan → présence incomplète (absent sans justification)
-      pointageService.enregistrerAnomalieIdempotent(
-          employeId, date, TypeAnomaliePointage.presence_incomplete, null, null);
     }
   }
 

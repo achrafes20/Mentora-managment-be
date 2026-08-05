@@ -307,7 +307,7 @@ JOIN qr_codes qr ON qr.employe_id = p.employe_id AND qr.actif = true
 CROSS JOIN (SELECT id FROM horaires_reference ORDER BY date_effet DESC LIMIT 1) h
 WHERE p.bucket >= 5 AND p.bucket NOT BETWEEN 25 AND 34;
 
--- Anomalies correspondantes (retard / départ anticipé / absence de check-out / présence incomplète)
+-- Anomalies correspondantes (retard / départ anticipé / absence de check-out)
 INSERT INTO anomalies_pointage (employe_id, date_pointage, type_anomalie, pointage_entree_id, pointage_sortie_id, resolue)
 SELECT p.employe_id, p.jour, 'retard'::type_anomalie_pointage,
   (SELECT id FROM pointages WHERE employe_id = p.employe_id AND type_scan = 'entree'
@@ -329,11 +329,6 @@ SELECT p.employe_id, p.jour, 'absence_checkout'::type_anomalie_pointage,
      AND horodatage::date = p.jour LIMIT 1),
   NULL, p.resolue_bucket < 30
 FROM plan_jour p WHERE p.bucket BETWEEN 25 AND 34;
-
-INSERT INTO anomalies_pointage (employe_id, date_pointage, type_anomalie, pointage_entree_id, pointage_sortie_id, resolue)
-SELECT p.employe_id, p.jour, 'presence_incomplete'::type_anomalie_pointage, NULL, NULL,
-  p.resolue_bucket < 30
-FROM plan_jour p WHERE p.bucket < 5;
 SQLEOF
 
 echo "==> Désactivation de Khalid Ouazzani (démission, pour certificat de travail)..."

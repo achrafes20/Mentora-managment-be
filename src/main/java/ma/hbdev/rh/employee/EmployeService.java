@@ -150,12 +150,14 @@ public class EmployeService {
                 requete.dateFinStagePrevue(),
                 requete.candidatureOrigineId(),
                 requete.sexe(),
-                requete.cin()));
+                requete.cin(),
+                requete.sujetStage()));
     evenements.publishEvent(
         EmployeModifieEvent.creation(
             employe.getId(),
             employe.getManagerId() != null ? employe.getManagerId() : departement.getManagerId(),
             employe.getPrenom() + " " + employe.getNom()));
+    desactiverSiEcheanceDepassee(employe);
     // EF-EMP-03/EF-EMP-05 : le CV déjà stocké au moment de l'ingestion recrutement est rattaché
     // tel quel comme document employé — pas de reupload, le fichier existe déjà dans shared/file.
     if (requete.cvFichierId() != null) {
@@ -182,7 +184,23 @@ public class EmployeService {
         requete.dateFinContratPrevue(),
         requete.dateFinStagePrevue(),
         requete.sexe(),
-        requete.cin());
+        requete.cin(),
+        requete.sujetStage());
+    evenements.publishEvent(new EmployeModifieEvent(id, "modification"));
+    // EF-EMP-XX : si la nouvelle date de fin saisie est déjà dépassée, désactiver tout de suite
+    // plutôt que d'attendre le prochain passage du balayage quotidien (02h30) — sinon un Admin qui
+    // corrige rétroactivement une date de fin de contrat verrait l'employé rester "actif" jusqu'au
+    // lendemain.
+    desactiverSiEcheanceDepassee(employe);
+    return employe;
+  }
+
+  // EF-EMP-01 : seul champ modifiable par un Manager sur la fiche d'un stagiaire de son
+  // département — trouver(id) applique déjà verifierPerimetreManager, donc un Manager hors
+  // périmètre reçoit le même AccessDeniedException qu'en lecture.
+  Employe modifierSujetStage(UUID id, String sujetStage) {
+    Employe employe = trouver(id);
+    employe.definirSujetStage(sujetStage);
     evenements.publishEvent(new EmployeModifieEvent(id, "modification"));
     return employe;
   }
@@ -211,6 +229,60 @@ public class EmployeService {
     Employe employe = trouver(id);
     employe.desactiver(requete.motif(), requete.dateDepart());
     evenements.publishEvent(new EmployeModifieEvent(id, "desactivation"));
+  }
+
+  /**
+   * Désactivation automatique des CDD/stages dont la date de fin prévue est dépassée (EF-EMP-XX).
+   * dateDepart = la date de fin prévue elle-même, pas la date du balayage : l'employé est considéré
+   * parti au terme de son contrat, même si le balayage ne tourne qu'une fois par jour.
+   *
+   * <p>Réutilise {@link #desactiver} (même passage par {@code Employe#desactiver}, même publication
+   * de {@link EmployeModifieEvent}) plutôt qu'une mutation directe — c'est ce même événement qui,
+   * côté module document, annule la surveillance planifiée encore en attente pour cet employé (cf.
+   * SurveillancePlanifieeService#gererEvenementEmploye).
+   */
+  void desactiverContratsExpires() {
+    LocalDate aujourdHui = LocalDate.now();
+    for (Employe employe :
+        employeRepository.findByStatutAndTypeContratAndDateFinContratPrevueLessThan(
+            StatutActifInactif.actif, TypeContratEmploye.CDD, aujourdHui)) {
+      employe.desactiver(MotifDepartEmploye.fin_cdd, employe.getDateFinContratPrevue());
+      evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+    }
+    for (Employe employe :
+        employeRepository.findByStatutAndTypeContratInAndDateFinStagePrevueLessThan(
+            StatutActifInactif.actif,
+            List.of(TypeContratEmploye.STAGIAIRE, TypeContratEmploye.STAGIAIRE_REMUNERE),
+            aujourdHui)) {
+      employe.desactiver(MotifDepartEmploye.fin_stage, employe.getDateFinStagePrevue());
+      evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+    }
+  }
+
+  /**
+   * Pendant unitaire de {@link #desactiverContratsExpires} : appelé juste après une création ou une
+   * modification, pour désactiver immédiatement un employé dont la date de fin saisie est déjà dans
+   * le passé, plutôt que de le laisser "actif" jusqu'au prochain balayage quotidien.
+   */
+  private void desactiverSiEcheanceDepassee(Employe employe) {
+    if (employe.getStatut() != StatutActifInactif.actif) {
+      return;
+    }
+    LocalDate aujourdHui = LocalDate.now();
+    if (employe.getTypeContrat() == TypeContratEmploye.CDD) {
+      LocalDate finContrat = employe.getDateFinContratPrevue();
+      if (finContrat != null && finContrat.isBefore(aujourdHui)) {
+        employe.desactiver(MotifDepartEmploye.fin_cdd, finContrat);
+        evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+      }
+    } else if (employe.getTypeContrat() == TypeContratEmploye.STAGIAIRE
+        || employe.getTypeContrat() == TypeContratEmploye.STAGIAIRE_REMUNERE) {
+      LocalDate finStage = employe.getDateFinStagePrevue();
+      if (finStage != null && finStage.isBefore(aujourdHui)) {
+        employe.desactiver(MotifDepartEmploye.fin_stage, finStage);
+        evenements.publishEvent(new EmployeModifieEvent(employe.getId(), "desactivation_auto"));
+      }
+    }
   }
 
   @Transactional(readOnly = true)

@@ -83,6 +83,11 @@ class Employe {
   // de données réelle par migration (V17).
   @Column private String cin;
 
+  // EF-EMP-01 : optionnel, saisi à la création pour un STAGIAIRE/STAGIAIRE_REMUNERE. Sans objet
+  // pour les autres types de contrat.
+  @Column(name = "sujet_stage")
+  private String sujetStage;
+
   // EF-EMP-05/EF-REC-13 : renseigné uniquement quand la fiche est créée depuis une candidature
   // recrutement passée au statut "Embauché" — jamais de ligne créée automatiquement, l'Admin
   // complète et soumet le formulaire normal (cf. plan T3.B1, décision verrouillée avec Taha :
@@ -112,7 +117,8 @@ class Employe {
       LocalDate dateFinStagePrevue,
       UUID candidatureOrigineId,
       SexeEmploye sexe,
-      String cin) {
+      String cin,
+      String sujetStage) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -127,6 +133,7 @@ class Employe {
     this.candidatureOrigineId = candidatureOrigineId;
     this.sexe = sexe;
     this.cin = cin;
+    this.sujetStage = sujetStage;
   }
 
   void modifier(
@@ -140,7 +147,8 @@ class Employe {
       LocalDate dateFinContratPrevue,
       LocalDate dateFinStagePrevue,
       SexeEmploye sexe,
-      String cin) {
+      String cin,
+      String sujetStage) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -152,6 +160,7 @@ class Employe {
     this.dateFinStagePrevue = dateFinStagePrevue;
     this.sexe = sexe;
     this.cin = cin;
+    this.sujetStage = sujetStage;
   }
 
   void transferer(Departement nouveauDepartement, UUID nouveauManagerId) {
@@ -167,6 +176,10 @@ class Employe {
 
   void definirPhoto(UUID fichierId) {
     this.photoFichierId = fichierId;
+  }
+
+  void definirSujetStage(String sujetStage) {
+    this.sujetStage = sujetStage;
   }
 
   UUID getId() {
@@ -239,6 +252,10 @@ class Employe {
 
   String getCin() {
     return cin;
+  }
+
+  String getSujetStage() {
+    return sujetStage;
   }
 
   UUID getCandidatureOrigineId() {

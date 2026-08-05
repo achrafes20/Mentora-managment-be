@@ -81,6 +81,7 @@ class SurveillancePlanifieeServiceTest {
             null,
             null,
             null,
+            null,
             null);
     when(employeService.recuperer(employeId)).thenReturn(employe);
 
@@ -118,6 +119,7 @@ class SurveillancePlanifieeServiceTest {
             null,
             null,
             null,
+            null,
             null);
     when(employeService.recuperer(employeId)).thenReturn(employe);
 
@@ -145,6 +147,7 @@ class SurveillancePlanifieeServiceTest {
         null,
         null,
         "actif",
+        null,
         null,
         null,
         null,

@@ -24,28 +24,25 @@ import org.springframework.web.multipart.MultipartFile;
 class DocumentRhController {
 
   private final DocumentRhService documentRhService;
-  private final EnvoiDocumentRhRepository envoiDocumentRepository;
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
   private final SurveillancePlanifieeService surveillancePlanifieeService;
 
   DocumentRhController(
       DocumentRhService documentRhService,
-      EnvoiDocumentRhRepository envoiDocumentRepository,
       NotificationPlanifieeRepository notificationPlanifieeRepository,
       SurveillancePlanifieeService surveillancePlanifieeService) {
     this.documentRhService = documentRhService;
-    this.envoiDocumentRepository = envoiDocumentRepository;
     this.notificationPlanifieeRepository = notificationPlanifieeRepository;
     this.surveillancePlanifieeService = surveillancePlanifieeService;
   }
 
+  // Lecture seule (statut "déjà envoyé") ouverte au Manager, dans son propre département — le
+  // service vérifie le périmètre via EmployeService#recuperer avant d'interroger l'historique.
+  // L'envoi/renvoi reste réservé à l'Admin (@PreAuthorize de classe).
   @GetMapping("/employes/{employeId}")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   ApiResponse<List<EnvoiDocumentResponse>> listerEnvois(@PathVariable UUID employeId) {
-    List<EnvoiDocumentResponse> envois =
-        envoiDocumentRepository.findByEmployeIdOrderByDateEnvoiDesc(employeId).stream()
-            .map(EnvoiDocumentResponse::depuis)
-            .toList();
-    return ApiResponse.ok(envois);
+    return ApiResponse.ok(documentRhService.listerEnvois(employeId));
   }
 
   @GetMapping("/surveillance")
@@ -73,8 +70,10 @@ class DocumentRhController {
 
   // EF-DOC : aperçu du PDF avant confirmation d'envoi — même génération, sans e-mail ni
   // persistance d'un EnvoiDocument. Rendu inline (pas Content-Disposition: attachment) pour
-  // s'ouvrir directement dans un onglet côté frontend, comme les PDF déjà envoyés.
+  // s'ouvrir directement dans un onglet côté frontend, comme les PDF déjà envoyés. Ouvert au
+  // Manager (périmètre département via EmployeService#recuperer) — l'envoi reste Admin seul.
   @GetMapping(value = "/employes/{employeId}/certificat-stage/apercu", produces = "application/pdf")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   ResponseEntity<byte[]> apercuCertificatStage(
       @PathVariable UUID employeId, @RequestParam(required = false) String sujetStage) {
     return reponsePdf(documentRhService.apercuCertificatStage(employeId, sujetStage));
@@ -83,6 +82,7 @@ class DocumentRhController {
   @GetMapping(
       value = "/employes/{employeId}/certificat-travail/apercu",
       produces = "application/pdf")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   ResponseEntity<byte[]> apercuCertificatTravail(@PathVariable UUID employeId) {
     return reponsePdf(documentRhService.apercuCertificatTravail(employeId));
   }
@@ -90,6 +90,7 @@ class DocumentRhController {
   @GetMapping(
       value = "/employes/{employeId}/attestation-travail/apercu",
       produces = "application/pdf")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   ResponseEntity<byte[]> apercuAttestationTravail(@PathVariable UUID employeId) {
     return reponsePdf(documentRhService.apercuAttestationTravail(employeId));
   }

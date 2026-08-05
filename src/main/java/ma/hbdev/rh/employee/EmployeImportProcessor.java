@@ -127,7 +127,9 @@ class EmployeImportProcessor {
                           null,
                           null,
                           null,
-                          // Sexe/CIN : idem, pas encore des champs mappés par l'assistant d'import.
+                          // Sexe/CIN/sujet de stage : idem, pas encore des champs mappés par
+                          // l'assistant d'import.
+                          null,
                           null,
                           null))
                   .getId();
@@ -156,6 +158,7 @@ class EmployeImportProcessor {
                 dateEmbauche,
                 typeContrat,
                 dateFinContratPrevue,
+                null,
                 null,
                 null,
                 null));

@@ -4,6 +4,5 @@ package ma.hbdev.rh.attendance;
 enum TypeAnomaliePointage {
   retard,
   depart_anticipe,
-  absence_checkout,
-  presence_incomplete
+  absence_checkout
 }

@@ -5,6 +5,7 @@ enum MotifDepartEmploye {
   demission,
   licenciement,
   fin_cdd,
+  fin_stage,
   rupture,
   autre
 }
