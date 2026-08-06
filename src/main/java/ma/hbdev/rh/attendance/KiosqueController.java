@@ -96,4 +96,9 @@ public class KiosqueController {
   ResponseEntity<ApiResponse<Void>> gererCodeDejaUtilise(CodeActivationDejaUtiliseException ex) {
     return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
   }
+
+  @ExceptionHandler(CodeActivationExpireException.class)
+  ResponseEntity<ApiResponse<Void>> gererCodeExpire(CodeActivationExpireException ex) {
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
+  }
 }

@@ -3,6 +3,7 @@ package ma.hbdev.rh.attendance;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -13,11 +14,18 @@ final class PointageSpecifications {
 
   private PointageSpecifications() {}
 
+  /**
+   * EF-AUTH-03 : {@code employeIds} restreint aux employés du périmètre du Manager courant (liste
+   * précalculée par {@code PointageService#employesDansPerimetre}, {@code null} = pas de
+   * restriction, cas Admin). Remplace l'ancien paramètre {@code employeId} unique — un Manager y
+   * voyait jusqu'ici les pointages de toute l'entreprise, contrairement à l'export qui filtrait
+   * déjà par équipe.
+   */
   static Specification<Pointage> filtrer(
-      UUID employeId, TypeScanPointage typeScan, LocalDate debut, LocalDate fin) {
+      List<UUID> employeIds, TypeScanPointage typeScan, LocalDate debut, LocalDate fin) {
     Specification<Pointage> spec = (root, query, cb) -> cb.conjunction();
-    if (employeId != null) {
-      spec = spec.and((root, query, cb) -> cb.equal(root.get("employeId"), employeId));
+    if (employeIds != null) {
+      spec = spec.and((root, query, cb) -> root.get("employeId").in(employeIds));
     }
     if (typeScan != null) {
       spec = spec.and((root, query, cb) -> cb.equal(root.get("typeScan"), typeScan));

@@ -3,14 +3,18 @@ package ma.hbdev.rh.attendance;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import ma.hbdev.rh.shared.security.CurrentUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,18 +41,21 @@ public class AnomalieService {
   private final HoraireReferenceService horaireReferenceService;
   private final PlanningTeletravailRepository planningRepository;
   private final PointageService pointageService;
+  private final JdbcTemplate jdbcTemplate;
 
   AnomalieService(
       AnomaliePointageRepository anomalieRepository,
       PointageRepository pointageRepository,
       HoraireReferenceService horaireReferenceService,
       PlanningTeletravailRepository planningRepository,
-      PointageService pointageService) {
+      PointageService pointageService,
+      JdbcTemplate jdbcTemplate) {
     this.anomalieRepository = anomalieRepository;
     this.pointageRepository = pointageRepository;
     this.horaireReferenceService = horaireReferenceService;
     this.planningRepository = planningRepository;
     this.pointageService = pointageService;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   /** Job nocturne : détecte les anomalies de la journée précédente (01h00 chaque nuit). */
@@ -93,6 +100,52 @@ public class AnomalieService {
     for (UUID employeId : employesAvecPointage) {
       analyserJourPourEmploye(employeId, jour, horaire);
     }
+
+    // EF-ATT-04 : absence totale — un employé actif ce jour-là (déjà embauché) sans aucun
+    // pointage. Complémentaire de la boucle ci-dessus, qui ne balaie que les employés ayant
+    // pointé au moins une fois : sans ça, une absence complète et injustifiée ne déclenchait
+    // jusqu'ici aucune alerte.
+    Set<UUID> avecPointage = new HashSet<>(employesAvecPointage);
+    List<UUID> employesActifs =
+        jdbcTemplate.queryForList(
+            "select id from employes where statut = 'actif' and date_embauche <= ?",
+            UUID.class,
+            jour);
+    for (UUID employeId : employesActifs) {
+      if (!avecPointage.contains(employeId)) {
+        analyserAbsenceTotale(employeId, jour);
+      }
+    }
+  }
+
+  private void analyserAbsenceTotale(UUID employeId, LocalDate date) {
+    // Court-circuits déjà établis pour les autres anomalies : télétravail (EF-ATT-09) et,
+    // nouveau ici, congé approuvé — une absence couverte par un congé n'a rien d'anormal.
+    if (planningRepository.estEnTeletravail(employeId, date)) {
+      return;
+    }
+    if (enCongeApprouve(employeId, date)) {
+      return;
+    }
+    pointageService.enregistrerAnomalieIdempotent(
+        employeId, date, TypeAnomaliePointage.absence_totale, null, null);
+  }
+
+  // Lecture brute dans la table de administrative (pas d'appel à son service/repository) — même
+  // principe déjà établi côté PointageService#congesApprouves pour l'export.
+  private boolean enCongeApprouve(UUID employeId, LocalDate date) {
+    Integer count =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from demandes_administratives
+            where employe_id = ? and type_demande = 'conge' and statut = 'approuvee'
+              and date_debut <= ? and date_fin >= ?
+            """,
+            Integer.class,
+            employeId,
+            date,
+            date);
+    return count != null && count > 0;
   }
 
   private void analyserJourPourEmploye(UUID employeId, LocalDate date, HoraireReference horaire) {
@@ -128,7 +181,8 @@ public class AnomalieService {
 
   /**
    * EF-ATT-04/05 : liste filtrable (employé, type, résolue, période), triée par défaut du plus
-   * récent au plus ancien.
+   * récent au plus ancien. EF-AUTH-03 : un Manager n'y voit que son équipe — même restriction que
+   * {@code PointageService#lister}, jusqu'ici absente ici alors que l'export l'appliquait déjà.
    */
   @Transactional(readOnly = true)
   public Page<AnomaliePointage> lister(
@@ -143,8 +197,12 @@ public class AnomalieService {
             pageable.getPageNumber(),
             pageable.getPageSize(),
             pageable.getSortOr(Sort.by(Sort.Direction.DESC, "creeLe")));
+    List<UUID> employeIds =
+        CurrentUser.hasRole("MANAGER")
+            ? pointageService.employesDansPerimetre(employeId)
+            : (employeId != null ? List.of(employeId) : null);
     return anomalieRepository.findAll(
-        AnomalieSpecifications.filtrer(employeId, type, resolue, debut, fin), pageableTrie);
+        AnomalieSpecifications.filtrer(employeIds, type, resolue, debut, fin), pageableTrie);
   }
 
   public AnomaliePointage marquerResolue(UUID id) {
