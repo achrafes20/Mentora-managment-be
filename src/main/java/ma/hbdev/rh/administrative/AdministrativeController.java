@@ -30,9 +30,19 @@ import org.springframework.web.bind.annotation.RestController;
 class AdministrativeController {
 
   private final AdministrativeService service;
+  private final JourFerieService jourFerieService;
+  private final PeriodeBlocageCongesService periodeBlocageCongesService;
+  private final PolitiqueCongeService politiqueCongeService;
 
-  AdministrativeController(AdministrativeService service) {
+  AdministrativeController(
+      AdministrativeService service,
+      JourFerieService jourFerieService,
+      PeriodeBlocageCongesService periodeBlocageCongesService,
+      PolitiqueCongeService politiqueCongeService) {
     this.service = service;
+    this.jourFerieService = jourFerieService;
+    this.periodeBlocageCongesService = periodeBlocageCongesService;
+    this.politiqueCongeService = politiqueCongeService;
   }
 
   @GetMapping
@@ -105,52 +115,52 @@ class AdministrativeController {
 
   @GetMapping("/jours-feries")
   ApiResponse<List<JourFerieReponse>> joursFeries() {
-    return ApiResponse.ok(service.joursFeries());
+    return ApiResponse.ok(jourFerieService.lister());
   }
 
   @PostMapping("/jours-feries")
   @PreAuthorize("hasRole('ADMIN')")
   ApiResponse<JourFerieReponse> creerJourFerie(@Valid @RequestBody JourFerieRequete requete) {
-    return ApiResponse.ok(service.creerJourFerie(requete));
+    return ApiResponse.ok(jourFerieService.creer(requete));
   }
 
   @DeleteMapping("/jours-feries/{id}")
   @PreAuthorize("hasRole('ADMIN')")
   ApiResponse<Void> supprimerJourFerie(@PathVariable UUID id) {
-    service.supprimerJourFerie(id);
+    jourFerieService.supprimer(id);
     return ApiResponse.ok();
   }
 
   // EF-ADM-12 : gestion réservée Admin (comme les jours fériés), jamais délégable.
   @GetMapping("/periodes-blocage-conges")
   ApiResponse<List<PeriodeBlocageCongesReponse>> periodesBlocageConges() {
-    return ApiResponse.ok(service.periodesBlocageConges());
+    return ApiResponse.ok(periodeBlocageCongesService.lister());
   }
 
   @PostMapping("/periodes-blocage-conges")
   @PreAuthorize("hasRole('ADMIN')")
   ApiResponse<PeriodeBlocageCongesReponse> creerPeriodeBlocageConges(
       @Valid @RequestBody PeriodeBlocageCongesRequete requete) {
-    return ApiResponse.ok(service.creerPeriodeBlocageConges(requete));
+    return ApiResponse.ok(periodeBlocageCongesService.creer(requete));
   }
 
   @DeleteMapping("/periodes-blocage-conges/{id}")
   @PreAuthorize("hasRole('ADMIN')")
   ApiResponse<Void> supprimerPeriodeBlocageConges(@PathVariable UUID id) {
-    service.supprimerPeriodeBlocageConges(id);
+    periodeBlocageCongesService.supprimer(id);
     return ApiResponse.ok();
   }
 
   // EF-ADM-11 : gestion réservée Admin, jamais délégable.
   @GetMapping("/politique-conges")
   ApiResponse<List<PolitiqueCongeReponse>> politiqueConges() {
-    return ApiResponse.ok(service.politiqueConges());
+    return ApiResponse.ok(politiqueCongeService.lister());
   }
 
   @PutMapping("/politique-conges/{typeContrat}")
   @PreAuthorize("hasRole('ADMIN')")
   ApiResponse<PolitiqueCongeReponse> modifierPolitiqueConge(
       @PathVariable String typeContrat, @Valid @RequestBody PolitiqueCongeRequete requete) {
-    return ApiResponse.ok(service.modifierPolitiqueConge(typeContrat, requete.joursParMois()));
+    return ApiResponse.ok(politiqueCongeService.modifier(typeContrat, requete.joursParMois()));
   }
 }

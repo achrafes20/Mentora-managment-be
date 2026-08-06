@@ -1,6 +1,8 @@
 package ma.hbdev.rh.attendance;
 
 import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.auth.DelegationService;
@@ -45,6 +47,12 @@ class KiosqueActivationService {
   @Value("${app.security.lockout.delay-minutes:30}")
   private int delaiDeverrouillageMinutes;
 
+  // NFR-UX-02 : un code généré mais jamais saisi (statut en_attente) ne doit pas rester valide
+  // indéfiniment — 24h laisse le temps de le transmettre physiquement à la personne qui installe
+  // le kiosque, sans traîner en base pour toujours comme avant.
+  @Value("${app.security.kiosque.expiration-code-heures:24}")
+  private int expirationCodeHeures;
+
   KiosqueActivationService(
       KiosqueActivationRepository repository,
       PasswordEncoder passwordEncoder,
@@ -87,8 +95,13 @@ class KiosqueActivationService {
   @Transactional(noRollbackFor = CodeActivationInvalideException.class)
   String verifierCode(String codeSaisi) {
     String normalise = codeSaisi == null ? "" : codeSaisi.trim().toUpperCase();
-    List<KiosqueActivation> enAttente =
+    List<KiosqueActivation> enAttenteBrut =
         repository.findByStatutOrderByEmisLeDesc(StatutActivationKiosque.en_attente);
+    Instant maintenant = Instant.now();
+    List<KiosqueActivation> enAttente =
+        enAttenteBrut.stream().filter(a -> !estExpiree(a, maintenant)).toList();
+    List<KiosqueActivation> expirees =
+        enAttenteBrut.stream().filter(a -> estExpiree(a, maintenant)).toList();
 
     for (KiosqueActivation candidat : enAttente) {
       if (!candidat.isVerrouillee() && passwordEncoder.matches(normalise, candidat.getCodeHash())) {
@@ -114,6 +127,14 @@ class KiosqueActivationService {
       }
     }
 
+    // Idem pour un code jamais consommé mais expiré (24h par défaut) : message distinct, pas de
+    // pénalité — ce n'est pas une tentative de devinette, juste un code périmé.
+    for (KiosqueActivation expiree : expirees) {
+      if (passwordEncoder.matches(normalise, expiree.getCodeHash())) {
+        throw new CodeActivationExpireException();
+      }
+    }
+
     // Aucun code ne correspond nulle part : pénalise le plus récent en attente (cf. javadoc de la
     // classe).
     if (!enAttente.isEmpty()) {
@@ -130,6 +151,10 @@ class KiosqueActivationService {
       }
     }
     throw new CodeActivationInvalideException("Code d'activation invalide.");
+  }
+
+  private boolean estExpiree(KiosqueActivation activation, Instant maintenant) {
+    return activation.getEmisLe().plus(Duration.ofHours(expirationCodeHeures)).isBefore(maintenant);
   }
 
   /** Vrai si le jeton d'appareil présenté correspond à une activation active et toujours valide. */

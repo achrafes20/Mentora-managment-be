@@ -64,6 +64,7 @@ record AnomalieDetecteeEvent(
       case retard -> "Un retard a été";
       case depart_anticipe -> "Un départ anticipé a été";
       case absence_checkout -> "Une absence de check-out a été";
+      case absence_totale -> "Une absence totale a été";
     };
   }
 }

@@ -306,7 +306,11 @@ public class PointageService {
     return total;
   }
 
-  /** EF-ATT-05 : historique filtrable (employé, type de scan, période). */
+  /**
+   * EF-ATT-05 : historique filtrable (employé, type de scan, période). EF-AUTH-03 : un Manager n'y
+   * voit que son équipe, comme {@link #exporter} le fait déjà — corrigé, jusqu'ici seul l'export
+   * appliquait cette restriction.
+   */
   @Transactional(readOnly = true)
   public Page<Pointage> lister(
       UUID employeId,
@@ -314,8 +318,12 @@ public class PointageService {
       LocalDate debut,
       LocalDate fin,
       Pageable pageable) {
+    List<UUID> employeIds =
+        CurrentUser.hasRole("MANAGER")
+            ? employesDansPerimetre(employeId)
+            : (employeId != null ? List.of(employeId) : null);
     return pointageRepository.findAll(
-        PointageSpecifications.filtrer(employeId, typeScan, debut, fin), pageable);
+        PointageSpecifications.filtrer(employeIds, typeScan, debut, fin), pageable);
   }
 
   @Transactional(readOnly = true)
@@ -561,7 +569,9 @@ public class PointageService {
 
   private record PeriodeCongeApprouve(LocalDate debut, LocalDate fin) {}
 
-  private List<UUID> employesDansPerimetre(UUID employeId) {
+  // Package-private (au lieu de private) : réutilisé par AnomalieService#lister pour appliquer la
+  // même restriction de périmètre Manager (EF-AUTH-03) que l'export ci-dessous.
+  List<UUID> employesDansPerimetre(UUID employeId) {
     if (CurrentUser.hasRole("MANAGER")) {
       UUID managerId =
           CurrentUser.id().orElseThrow(() -> new AccessDeniedException("Non authentifie"));

@@ -4,14 +4,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import ma.hbdev.rh.auth.DelegationService;
 import ma.hbdev.rh.shared.export.FormatExport;
 import ma.hbdev.rh.shared.export.FormatageExport;
@@ -23,19 +22,23 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Cycle de vie des demandes administratives (congés, bons de sortie, documents libres) et calcul de
+ * solde de congés. Les CRUD annexes (jours fériés, périodes de blocage, politique de congés) vivent
+ * dans leurs propres services — {@link JourFerieService}, {@link PeriodeBlocageCongesService},
+ * {@link PolitiqueCongeService} — extraits pour ne pas mélanger 5 responsabilités dans une seule
+ * classe ; les repositories correspondants restent injectés ici directement pour les simples
+ * lectures utilisées par la validation (pas d'aller-retour inter-services pour une requête d'une
+ * ligne).
+ */
 @Service
 @Transactional
 class AdministrativeService {
-
-  // EF-ADM-11 : types de contrat valides (miroir léger du type Postgres type_contrat_employe,
-  // sans dépendre du enum package-private employee.TypeContratEmploye — même principe que
-  // employe(), déjà lu en String brut ici plutôt que via une dépendance croisée de module).
-  private static final Set<String> TYPES_CONTRAT_CONNUS =
-      Set.of("CDI", "CDD", "STAGIAIRE", "STAGIAIRE_REMUNERE");
 
   private static final List<String> ENTETES_EXPORT_DEMANDES =
       List.of(
@@ -54,6 +57,7 @@ class AdministrativeService {
   private final MouvementCongeAdmRepository mouvementRepository;
   private final JourFerieRepository jourFerieRepository;
   private final PeriodeBlocageCongesRepository periodeBlocageRepository;
+  private final PolitiqueCongeService politiqueCongeService;
   private final JdbcTemplate jdbcTemplate;
   private final ApplicationEventPublisher evenements;
   private final DelegationService delegationService;
@@ -64,6 +68,7 @@ class AdministrativeService {
       MouvementCongeAdmRepository mouvementRepository,
       JourFerieRepository jourFerieRepository,
       PeriodeBlocageCongesRepository periodeBlocageRepository,
+      PolitiqueCongeService politiqueCongeService,
       JdbcTemplate jdbcTemplate,
       ApplicationEventPublisher evenements,
       DelegationService delegationService,
@@ -72,6 +77,7 @@ class AdministrativeService {
     this.mouvementRepository = mouvementRepository;
     this.jourFerieRepository = jourFerieRepository;
     this.periodeBlocageRepository = periodeBlocageRepository;
+    this.politiqueCongeService = politiqueCongeService;
     this.jdbcTemplate = jdbcTemplate;
     this.evenements = evenements;
     this.delegationService = delegationService;
@@ -118,9 +124,14 @@ class AdministrativeService {
                       ? cb.disjunction()
                       : root.get("employeId").in(employesManager));
     }
-    return demandeRepository
-        .findAll(spec, pageable)
-        .map(d -> DemandeAdministrativeReponse.depuis(d, employe(d.getEmployeId()), duree(d)));
+    Page<DemandeAdministrative> page = demandeRepository.findAll(spec, pageable);
+    // Corrige un N+1 : une requête employes par ligne (jusqu'à `pageable.getPageSize()` requêtes
+    // individuelles) devient une seule requête groupée, quelle que soit la taille de la page.
+    Map<UUID, EmployeInfo> employesParId =
+        employesParIds(
+            page.getContent().stream().map(DemandeAdministrative::getEmployeId).toList());
+    return page.map(
+        d -> DemandeAdministrativeReponse.depuis(d, employesParId.get(d.getEmployeId()), duree(d)));
   }
 
   DemandeAdministrativeReponse creer(DemandeAdministrativeRequete requete) {
@@ -209,111 +220,12 @@ class AdministrativeService {
   }
 
   @Transactional(readOnly = true)
-  java.util.List<MouvementCongeReponse> mouvements(UUID employeId) {
+  List<MouvementCongeReponse> mouvements(UUID employeId) {
     EmployeInfo employe = employe(employeId);
     verifierPerimetreManagerOuDelegue(employe);
     return mouvementRepository.findByEmployeIdOrderByDateMouvementDescCreeLeDesc(employeId).stream()
         .map(MouvementCongeReponse::depuis)
         .toList();
-  }
-
-  @Transactional(readOnly = true)
-  java.util.List<JourFerieReponse> joursFeries() {
-    return jourFerieRepository.findAllByOrderByDateFerieDesc().stream()
-        .map(JourFerieReponse::depuis)
-        .toList();
-  }
-
-  JourFerieReponse creerJourFerie(JourFerieRequete requete) {
-    verifierAdmin();
-    JourFerie jour =
-        jourFerieRepository
-            .findByDateFerie(requete.dateFerie())
-            .map(
-                existant -> {
-                  existant.modifier(requete.libelle(), utilisateurCourant());
-                  return existant;
-                })
-            .orElseGet(
-                () -> new JourFerie(requete.dateFerie(), requete.libelle(), utilisateurCourant()));
-    return JourFerieReponse.depuis(jourFerieRepository.save(jour));
-  }
-
-  void supprimerJourFerie(UUID id) {
-    verifierAdmin();
-    jourFerieRepository.deleteById(id);
-  }
-
-  @Transactional(readOnly = true)
-  java.util.List<PeriodeBlocageCongesReponse> periodesBlocageConges() {
-    return periodeBlocageRepository.findAllByOrderByDateDebutDesc().stream()
-        .map(PeriodeBlocageCongesReponse::depuis)
-        .toList();
-  }
-
-  PeriodeBlocageCongesReponse creerPeriodeBlocageConges(PeriodeBlocageCongesRequete requete) {
-    verifierAdmin();
-    if (requete.dateFin().isBefore(requete.dateDebut())) {
-      throw new IllegalArgumentException("La date de fin doit etre apres la date de debut");
-    }
-    PeriodeBlocageConges periode =
-        periodeBlocageRepository.save(
-            new PeriodeBlocageConges(
-                requete.dateDebut(), requete.dateFin(), requete.libelle(), utilisateurCourant()));
-    evenements.publishEvent(new PeriodeBlocageCongesEvent(periode.getId(), "creation"));
-    return PeriodeBlocageCongesReponse.depuis(periode);
-  }
-
-  void supprimerPeriodeBlocageConges(UUID id) {
-    verifierAdmin();
-    periodeBlocageRepository.deleteById(id);
-    evenements.publishEvent(new PeriodeBlocageCongesEvent(id, "suppression"));
-  }
-
-  @Transactional(readOnly = true)
-  List<PolitiqueCongeReponse> politiqueConges() {
-    return jdbcTemplate.query(
-        """
-        select type_contrat::text, jours_par_mois, modifie_par, modifie_le
-          from politique_conges
-         order by type_contrat
-        """,
-        (rs, rowNum) ->
-            new PolitiqueCongeReponse(
-                rs.getString("type_contrat"),
-                rs.getBigDecimal("jours_par_mois"),
-                rs.getObject("modifie_par", UUID.class),
-                // pgjdbc ne convertit pas timestamptz -> java.time.Instant directement via
-                // getObject(col, Class) (seul OffsetDateTime/LocalDateTime le sont).
-                rs.getObject("modifie_le", OffsetDateTime.class).toInstant()));
-  }
-
-  PolitiqueCongeReponse modifierPolitiqueConge(String typeContrat, BigDecimal joursParMois) {
-    verifierAdmin();
-    if (!TYPES_CONTRAT_CONNUS.contains(typeContrat)) {
-      throw new IllegalArgumentException("Type de contrat inconnu : " + typeContrat);
-    }
-    jdbcTemplate.update(
-        """
-        update politique_conges
-           set jours_par_mois = ?, modifie_par = ?, modifie_le = now()
-         where type_contrat = cast(? as type_contrat_employe)
-        """,
-        joursParMois,
-        utilisateurCourant(),
-        typeContrat);
-    evenements.publishEvent(new PolitiqueCongeModifieeEvent(typeContrat));
-    return politiqueConges().stream()
-        .filter(p -> p.typeContrat().equals(typeContrat))
-        .findFirst()
-        .orElseThrow();
-  }
-
-  private BigDecimal tauxAcquisitionMensuel(String typeContrat) {
-    return jdbcTemplate.query(
-        "select jours_par_mois from politique_conges where type_contrat = cast(? as type_contrat_employe)",
-        rs -> rs.next() ? rs.getBigDecimal("jours_par_mois") : BigDecimal.ZERO,
-        typeContrat);
   }
 
   private void valider(DemandeAdministrativeRequete requete, EmployeInfo employe) {
@@ -393,7 +305,7 @@ class AdministrativeService {
     if (employe.dateEmbauche() == null || employe.typeContrat() == null) {
       return BigDecimal.ZERO;
     }
-    BigDecimal tauxMensuel = tauxAcquisitionMensuel(employe.typeContrat());
+    BigDecimal tauxMensuel = politiqueCongeService.tauxAcquisitionMensuel(employe.typeContrat());
     if (tauxMensuel.compareTo(BigDecimal.ZERO) == 0) {
       return BigDecimal.ZERO;
     }
@@ -447,22 +359,46 @@ class AdministrativeService {
         .orElseThrow(() -> new DemandeAdministrativeIntrouvableException(id));
   }
 
+  private static final RowMapper<EmployeInfo> MAPPEUR_EMPLOYE_INFO =
+      (rs, rowNum) ->
+          new EmployeInfo(
+              rs.getObject("id", UUID.class),
+              rs.getString("nom"),
+              rs.getString("prenom"),
+              rs.getObject("manager_id", UUID.class),
+              rs.getObject("date_embauche", LocalDate.class),
+              rs.getString("type_contrat"),
+              rs.getString("statut"));
+
   private EmployeInfo employe(UUID id) {
     return jdbcTemplate.queryForObject(
         """
         select id, nom, prenom, manager_id, date_embauche, type_contrat::text, statut::text
         from employes where id = ?
         """,
-        (rs, rowNum) ->
-            new EmployeInfo(
-                rs.getObject("id", UUID.class),
-                rs.getString("nom"),
-                rs.getString("prenom"),
-                rs.getObject("manager_id", UUID.class),
-                rs.getObject("date_embauche", LocalDate.class),
-                rs.getString("type_contrat"),
-                rs.getString("statut")),
+        MAPPEUR_EMPLOYE_INFO,
         id);
+  }
+
+  // Version groupée de employe(UUID) — évite un N+1 sur lister()/exporter() : une seule requête
+  // pour toute une page au lieu d'une par ligne.
+  private Map<UUID, EmployeInfo> employesParIds(List<UUID> ids) {
+    List<UUID> distincts = ids.stream().distinct().toList();
+    if (distincts.isEmpty()) {
+      return Map.of();
+    }
+    // IN dynamique plutôt que = any(?) : évite de dépendre de java.sql.Array/le support driver
+    // pour convertir un tableau Java en tableau Postgres — juste des placeholders JDBC standards.
+    String placeholders = distincts.stream().map(id -> "?").collect(Collectors.joining(","));
+    List<EmployeInfo> employes =
+        jdbcTemplate.query(
+            "select id, nom, prenom, manager_id, date_embauche, type_contrat::text, statut::text "
+                + "from employes where id in ("
+                + placeholders
+                + ")",
+            MAPPEUR_EMPLOYE_INFO,
+            distincts.toArray());
+    return employes.stream().collect(Collectors.toMap(EmployeInfo::id, e -> e));
   }
 
   private void verifierPerimetreManager(EmployeInfo employe) {
@@ -482,14 +418,9 @@ class AdministrativeService {
     verifierPerimetreManager(employe);
   }
 
-  private void verifierAdmin() {
-    if (!CurrentUser.hasRole("ADMIN")) {
-      throw new AccessDeniedException("Action reservee admin");
-    }
-  }
-
   // EF-AUTH-11/12 : decision + actions adjacentes (approuver/rejeter/annuler) ouvertes au delegue
-  // actif — jours feries/config restent verifierAdmin() strict, jamais delegables.
+  // actif — jours feries/config restent verifierAdmin() strict, jamais delegables (cf. les
+  // services dédiés).
   private void verifierAdminOuDelegue() {
     if (!CurrentUser.hasRole("ADMIN") && !delegationService.estDelegueActif()) {
       throw new AccessDeniedException("Action reservee admin (ou delegue actif)");
