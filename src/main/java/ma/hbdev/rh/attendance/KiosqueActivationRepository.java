@@ -15,4 +15,6 @@ interface KiosqueActivationRepository extends JpaRepository<KiosqueActivation, U
   List<KiosqueActivation> findByStatutIn(List<StatutActivationKiosque> statuts);
 
   List<KiosqueActivation> findAllByOrderByEmisLeDesc();
+
+  Optional<KiosqueActivation> findByJetonRevocationHash(String jetonRevocationHash);
 }

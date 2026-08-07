@@ -239,6 +239,9 @@ curl -s -X PUT "$API/api/politique-anomalies" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"seuilAnomalies":3,"periodeJours":30}' >/dev/null
 
+echo "==> QR code de site (pointage mobile)..."
+poster_json "$API/api/kiosque/sites" '{"libelle":"Siège Tétouan"}' >/dev/null
+
 FERIE1=$(date -d "-10 days" +%Y-%m-%d)
 FERIE2=$(date -d "-17 days" +%Y-%m-%d)
 echo "==> Jours fériés ($FERIE1, $FERIE2)..."
@@ -337,6 +340,27 @@ poster_json "$API/api/employes/$KHALID_ID/desactiver" \
   "{\"motif\":\"demission\",\"dateDepart\":\"$DATE_DEPART\"}" >/dev/null
 
 # ─────────────────────────────────────────────────────────────────────
+# 2bis. Conformité RH Maroc (CNSS/AMO/CIMR/RIB/période d'essai, salaire)
+# ─────────────────────────────────────────────────────────────────────
+
+echo "==> Conformité RH Maroc (CNSS/AMO/CIMR/RIB, période d'essai)..."
+# PUT /api/employes/{id} remplace la fiche entière (EmployeModificationRequete) : on renvoie les
+# champs déjà connus de la création plus les nouveaux champs de conformité.
+PERIODE_ESSAI_YASSINE=$(date -d "2025-03-01 +90 days" +%Y-%m-%d)
+mettre_a_jour_json "$API/api/employes/$YASSINE_ID" \
+  "{\"nom\":\"Idrissi\",\"prenom\":\"Yassine\",\"email\":\"yassine.idrissi@hbdev.ma\",\"poste\":\"Développeur backend\",\"dateEmbauche\":\"2025-03-01\",\"typeContrat\":\"CDI\",\"sexe\":\"HOMME\",\"cin\":\"AB111111\",\"numeroCnss\":\"7712345\",\"numeroAmo\":\"AM99887766\",\"numeroCimr\":\"CIMR445566\",\"rib\":\"230 780 0123456789012345 67\",\"periodeEssaiFinLe\":\"$PERIODE_ESSAI_YASSINE\"}" \
+  >/dev/null
+
+PERIODE_ESSAI_HIND=$(date -d "2025-01-20 +90 days" +%Y-%m-%d)
+mettre_a_jour_json "$API/api/employes/$HIND_ID" \
+  "{\"nom\":\"Chraibi\",\"prenom\":\"Hind\",\"email\":\"hind.chraibi@hbdev.ma\",\"poste\":\"Gestionnaire paie\",\"dateEmbauche\":\"2025-01-20\",\"typeContrat\":\"CDI\",\"sexe\":\"FEMME\",\"cin\":\"AB111114\",\"numeroCnss\":\"7723456\",\"numeroAmo\":\"AM99887755\",\"numeroCimr\":\"CIMR445577\",\"rib\":\"230 780 0198765432109876 54\",\"periodeEssaiFinLe\":\"$PERIODE_ESSAI_HIND\"}" \
+  >/dev/null
+
+echo "==> Salaire brut mensuel (pour l'attestation de salaire)..."
+mettre_a_jour_json "$API/api/employes/$YASSINE_ID/salaire" '{"salaireBrutMensuel":14500.00}' >/dev/null
+mettre_a_jour_json "$API/api/employes/$HIND_ID/salaire" '{"salaireBrutMensuel":11000.00}' >/dev/null
+
+# ─────────────────────────────────────────────────────────────────────
 # 3. Documents RH
 # ─────────────────────────────────────────────────────────────────────
 
@@ -348,6 +372,8 @@ poster_json "$API/api/documents/employes/$ANAS_ID/certificat-stage" \
 curl -s -X POST "$API/api/documents/employes/$YASSINE_ID/attestation-travail" \
   -H "Authorization: Bearer $TOKEN" >/dev/null
 curl -s -X POST "$API/api/documents/employes/$HIND_ID/attestation-travail" \
+  -H "Authorization: Bearer $TOKEN" >/dev/null
+curl -s -X POST "$API/api/documents/employes/$YASSINE_ID/attestation-salaire" \
   -H "Authorization: Bearer $TOKEN" >/dev/null
 curl -s -X POST "$API/api/documents/employes/$KHALID_ID/certificat-travail" \
   -H "Authorization: Bearer $TOKEN" >/dev/null
@@ -385,6 +411,44 @@ D5=$(creer_demande_conge "$SALMA_ID" "$(date -d "+3 days" +%Y-%m-%d)" "$(date -d
 [ -n "$D5" ] && patch_vide "$API/api/demandes-administratives/$D5/rejeter"
 # D1, D2, D3 restent "en_attente" pour la démo de la file d'approbation.
 
+echo "==> Congés légaux spéciaux (mariage, naissance, décès, maladie avec justificatif)..."
+
+creer_demande_speciale() {
+  # $1 employeId $2 typeDemande $3 dateDebut $4 dateFin $5 motif $6 fichierDocumentLibreId(ou vide)
+  fichier_json=""
+  [ -n "$6" ] && fichier_json=",\"fichierDocumentLibreId\":\"$6\""
+  poster_json "$API/api/demandes-administratives" \
+    "{\"employeId\":\"$1\",\"typeDemande\":\"$2\",\"dateDebut\":\"$3\",\"dateFin\":\"$4\",\"motif\":\"$5\"$fichier_json}" \
+    | extraire_id
+}
+
+D6=$(creer_demande_speciale "$OMAR_ID" "conge_mariage" \
+  "$(date -d "+30 days" +%Y-%m-%d)" "$(date -d "+33 days" +%Y-%m-%d)" "Mariage")
+D7=$(creer_demande_speciale "$AMINE_ID" "conge_naissance" \
+  "$(date -d "+2 days" +%Y-%m-%d)" "$(date -d "+4 days" +%Y-%m-%d)" "Naissance de mon enfant")
+D8=$(creer_demande_speciale "$SALMA_ID" "conge_deces" \
+  "$(date -d "-2 days" +%Y-%m-%d)" "$(date -d "-1 days" +%Y-%m-%d)" "Décès d'un proche")
+
+# La maladie exige un justificatif déjà téléversé (fichierDocumentLibreId) avant la création —
+# LocalDiskFileStorage n'accepte que pdf/doc/docx/jpeg/png (NFR-SEC-07), un .txt serait rejeté.
+# PDF minimal mais valide (une page vide), pas un contenu arbitraire renommé en .pdf.
+JUSTIFICATIF="$TMPDIR_SEED/arret-travail.pdf"
+printf '%%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\nxref\n0 4\n0000000000 65535 f \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n0\n%%%%EOF' > "$JUSTIFICATIF"
+# La réponse est { "data": "<uuid>" } (UUID brut, pas un objet {"id":...}) — extraire_id ne
+# correspond pas à ce format, on extrait donc directement le champ "data".
+FICHIER_JUSTIFICATIF_ID=$(curl -s -X POST "$API/api/demandes-administratives/justificatif" \
+  -H "Authorization: Bearer $TOKEN" -F "fichier=@$JUSTIFICATIF" \
+  | grep -o '"data":"[^"]*"' | cut -d'"' -f4)
+if [ -n "$FICHIER_JUSTIFICATIF_ID" ]; then
+  D9=$(creer_demande_speciale "$NADIA_ID" "conge_maladie" \
+    "$(date -d "-1 days" +%Y-%m-%d)" "$(date -d "+1 days" +%Y-%m-%d)" \
+    "Grippe, arrêt médical" "$FICHIER_JUSTIFICATIF_ID")
+  [ -n "$D9" ] && patch_vide "$API/api/demandes-administratives/$D9/approuver"
+fi
+
+[ -n "$D6" ] && patch_vide "$API/api/demandes-administratives/$D6/approuver"
+# D7, D8 restent "en_attente" pour varier les statuts affichés.
+
 # ─────────────────────────────────────────────────────────────────────
 # 5. Recrutement
 # ─────────────────────────────────────────────────────────────────────
@@ -392,15 +456,18 @@ D5=$(creer_demande_conge "$SALMA_ID" "$(date -d "+3 days" +%Y-%m-%d)" "$(date -d
 echo "==> Recrutement (offres, candidatures, pipeline)..."
 
 creer_offre() {
-  # $1 intitule $2 departementId $3 motsCles(JSON array)
+  # $1 intitule $2 departementId $3 motsCles(JSON array) $4 categorie(ou vide)
+  categorie_json=""
+  [ -n "$4" ] && categorie_json=",\"categorie\":\"$4\""
   poster_json "$API/api/offres" \
-    "{\"intitule\":\"$1\",\"description\":\"Poste à pourvoir — description de test (seed).\",\"departementId\":\"$2\",\"motsClesRequis\":$3}" \
+    "{\"intitule\":\"$1\",\"description\":\"Poste à pourvoir — description de test (seed).\",\"departementId\":\"$2\",\"motsClesRequis\":$3$categorie_json}" \
     | extraire_id
 }
 
-OFFRE_DEV_ID=$(creer_offre "Développeur Full-Stack" "$INGENIERIE_ID" '["java","react","typescript"]')
-OFFRE_RH_ID=$(creer_offre "Assistant RH" "$RH_ID" '["administratif","paie","recrutement"]')
-OFFRE_FIN_ID=$(creer_offre "Analyste Financier" "$FINANCE_ID" '["finance","excel","comptabilite"]')
+OFFRE_DEV_ID=$(creer_offre "Développeur Full-Stack" "$INGENIERIE_ID" '["java","react","typescript"]' "Ingénieurs IA")
+OFFRE_RH_ID=$(creer_offre "Assistant RH" "$RH_ID" '["administratif","paie","recrutement"]' "")
+OFFRE_FIN_ID=$(creer_offre "Analyste Financier" "$FINANCE_ID" '["finance","excel","comptabilite"]' "")
+OFFRE_STAGE_ID=$(creer_offre "Stagiaire Développement Web" "$INGENIERIE_ID" '["html","css","javascript"]' "Stagiaires")
 
 ingerer_candidature() {
   # $1 email $2 nom $3 sujet $4 corps
@@ -445,4 +512,8 @@ echo "    Manager : karim.bennani@hbdev.ma / $MANAGER_PASSWORD (Ingénierie)"
 echo "    Manager : sara.alaoui@hbdev.ma / $MANAGER_PASSWORD (Ressources Humaines)"
 echo "    Manager : youssef.amrani@hbdev.ma / $MANAGER_PASSWORD (Finance)"
 echo "    10 employés (dont 3 stagiaires, 1 CDD, 1 désactivé), 20 jours de pointages,"
-echo "    anomalies, 2 jours fériés, 5 demandes de congé, 3 offres, 6 candidatures."
+echo "    anomalies, 2 jours fériés, 9 demandes de congé (dont mariage/naissance/décès/maladie),"
+echo "    4 offres (1 catégorisée « Stagiaires »), 6 candidatures, conformité RH Maroc et"
+echo "    salaire renseignés sur 2 fiches, attestation de salaire générée, QR de site pour le"
+echo "    pointage mobile. Un code de pointage mobile personnel a aussi été envoyé par e-mail"
+echo "    (Mailpit) à chacun des 10 employés à leur création."

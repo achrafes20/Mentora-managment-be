@@ -1,6 +1,9 @@
 package ma.hbdev.rh.employee;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -13,6 +16,7 @@ import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +58,7 @@ public class EmployeService {
   private final MailService mailService;
   private final ApplicationEventPublisher evenements;
   private final TableauExportService tableauExportService;
+  private final JdbcTemplate jdbcTemplate;
 
   EmployeService(
       EmployeRepository employeRepository,
@@ -63,7 +68,8 @@ public class EmployeService {
       FileStorageService fileStorageService,
       MailService mailService,
       ApplicationEventPublisher evenements,
-      TableauExportService tableauExportService) {
+      TableauExportService tableauExportService,
+      JdbcTemplate jdbcTemplate) {
     this.employeRepository = employeRepository;
     this.departementRepository = departementRepository;
     this.transfertRepository = transfertRepository;
@@ -72,6 +78,7 @@ public class EmployeService {
     this.mailService = mailService;
     this.evenements = evenements;
     this.tableauExportService = tableauExportService;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   @Transactional(readOnly = true)
@@ -155,7 +162,12 @@ public class EmployeService {
                 requete.candidatureOrigineId(),
                 requete.sexe(),
                 requete.cin(),
-                requete.sujetStage()));
+                requete.sujetStage(),
+                requete.numeroCnss(),
+                requete.numeroAmo(),
+                requete.numeroCimr(),
+                requete.rib(),
+                requete.periodeEssaiFinLe()));
     evenements.publishEvent(
         EmployeModifieEvent.creation(
             employe.getId(),
@@ -189,7 +201,12 @@ public class EmployeService {
         requete.dateFinStagePrevue(),
         requete.sexe(),
         requete.cin(),
-        requete.sujetStage());
+        requete.sujetStage(),
+        requete.numeroCnss(),
+        requete.numeroAmo(),
+        requete.numeroCimr(),
+        requete.rib(),
+        requete.periodeEssaiFinLe());
     evenements.publishEvent(new EmployeModifieEvent(id, "modification", nomComplet(employe)));
     // EF-EMP-XX : si la nouvelle date de fin saisie est déjà dépassée, désactiver tout de suite
     // plutôt que d'attendre le prochain passage du balayage quotidien (02h30) — sinon un Admin qui
@@ -205,6 +222,15 @@ public class EmployeService {
   Employe modifierSujetStage(UUID id, String sujetStage) {
     Employe employe = trouver(id);
     employe.definirSujetStage(sujetStage);
+    evenements.publishEvent(new EmployeModifieEvent(id, "modification", nomComplet(employe)));
+    return employe;
+  }
+
+  // EF-DOC-14 : Admin uniquement (donnée sensible), à part du formulaire fiche standard — même
+  // principe que modifierSujetStage.
+  Employe modifierSalaireBrutMensuel(UUID id, java.math.BigDecimal salaireBrutMensuel) {
+    Employe employe = trouver(id);
+    employe.definirSalaireBrutMensuel(salaireBrutMensuel);
     evenements.publishEvent(new EmployeModifieEvent(id, "modification", nomComplet(employe)));
     return employe;
   }
@@ -471,6 +497,60 @@ public class EmployeService {
     }
     List<List<String>> lignes = employes.stream().map(EmployeService::ligneExport).toList();
     return tableauExportService.generer(format, "Employes", ENTETES_EXPORT, lignes);
+  }
+
+  // EF-DOC-15 : export mensuel pour la paie — données brutes (identifiants organismes sociaux,
+  // salaire, jours badgés) à destination du comptable, PAS un calcul de cotisations CNSS/IR : les
+  // taux/tranches évoluent et une formule figée dans le code serait fausse silencieusement dès le
+  // premier changement réglementaire — le calcul final reste fait par l'outil de paie externe.
+  private static final List<String> ENTETES_EXPORT_PAIE =
+      List.of(
+          "Nom",
+          "Prénom",
+          "N° CNSS",
+          "N° AMO",
+          "Type de contrat",
+          "Salaire brut mensuel (MAD)",
+          "Jours badgés (mois)");
+
+  @Transactional(readOnly = true)
+  byte[] exporterPaie(FormatExport format, YearMonth mois) {
+    List<Employe> employes = employeRepository.findByStatut(StatutActifInactif.actif);
+    Instant debut = mois.atDay(1).atStartOfDay(ZoneId.of("Africa/Casablanca")).toInstant();
+    Instant fin =
+        mois.plusMonths(1).atDay(1).atStartOfDay(ZoneId.of("Africa/Casablanca")).toInstant();
+    List<List<String>> lignes =
+        employes.stream().map(e -> ligneExportPaie(e, joursBadges(e.getId(), debut, fin))).toList();
+    return tableauExportService.generer(format, "Paie " + mois, ENTETES_EXPORT_PAIE, lignes);
+  }
+
+  // EF-DOC-15 : nombre de jours distincts avec au moins un pointage "entrée" dans le mois —
+  // volontairement simple (pas de déduction weekends/fériés/congés) : c'est un repère pour le
+  // comptable, pas un décompte réglementaire de jours ouvrés.
+  private int joursBadges(UUID employeId, Instant debut, Instant fin) {
+    Integer compte =
+        jdbcTemplate.queryForObject(
+            """
+            select count(distinct (horodatage at time zone 'Africa/Casablanca')::date)
+            from pointages
+            where employe_id = ? and type_scan = 'entree' and horodatage >= ? and horodatage < ?
+            """,
+            Integer.class,
+            employeId,
+            debut,
+            fin);
+    return compte == null ? 0 : compte;
+  }
+
+  private static List<String> ligneExportPaie(Employe employe, int joursBadges) {
+    return List.of(
+        texte(employe.getNom()),
+        texte(employe.getPrenom()),
+        texte(employe.getNumeroCnss()),
+        texte(employe.getNumeroAmo()),
+        texte(employe.getTypeContrat() == null ? null : employe.getTypeContrat().name()),
+        texte(employe.getSalaireBrutMensuel()),
+        String.valueOf(joursBadges));
   }
 
   private static List<String> ligneExport(Employe employe) {

@@ -90,6 +90,12 @@ class DocumentRhServiceTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null));
     when(certificatGenerator.genererCertificatStage(
             org.mockito.ArgumentMatchers.anyString(),

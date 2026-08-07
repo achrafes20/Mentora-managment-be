@@ -2,6 +2,8 @@ package ma.hbdev.rh.attendance;
 
 import jakarta.validation.Valid;
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,11 +33,15 @@ public class KiosqueController {
 
   private final PointageService pointageService;
   private final KiosqueActivationService activationService;
+  private final SiteQrCodeService siteQrCodeService;
 
   public KiosqueController(
-      PointageService pointageService, KiosqueActivationService activationService) {
+      PointageService pointageService,
+      KiosqueActivationService activationService,
+      SiteQrCodeService siteQrCodeService) {
     this.pointageService = pointageService;
     this.activationService = activationService;
+    this.siteQrCodeService = siteQrCodeService;
   }
 
   @PostMapping("/scan")
@@ -44,6 +50,46 @@ public class KiosqueController {
       @Valid @RequestBody ScanRequete requete) {
     activationService.verifierAppareilActif(jetonAppareil);
     return ApiResponse.ok(PointageReponse.depuis(pointageService.scanner(requete)));
+  }
+
+  /**
+   * EF-ATT-17 : pointage depuis le téléphone personnel de l'employé — deux preuves distinctes,
+   * combinées : l'identité vient de l'appairage de l'appareil (cf.
+   * KiosqueActivationController#genererCodePersonnel), la présence physique au lieu vient du QR de
+   * site scanné ({@code valeurQrSite}, affiché/imprimé sur place, cf. SiteQrCodeController) — pas
+   * du QR badge de l'employé, qui n'intervient pas dans ce flux.
+   */
+  @PostMapping("/scan-personnel")
+  public ApiResponse<PointageReponse> scannerPersonnel(
+      @RequestHeader(value = EN_TETE_JETON_APPAREIL, required = false) String jetonAppareil,
+      @Valid @RequestBody ScanPersonnelRequete requete) {
+    UUID employeId = activationService.employeAppareilPersonnel(jetonAppareil);
+    siteQrCodeService
+        .resoudreParValeur(requete.valeurQrSite())
+        .orElseThrow(SiteQrInvalideException::new);
+    return ApiResponse.ok(
+        PointageReponse.depuis(pointageService.scannerPersonnel(employeId, requete.typeScan())));
+  }
+
+  /**
+   * EF-ATT-17 : historique perso affiché sur /pointage-mobile — 5 derniers pointages de l'employé
+   * propriétaire de l'appareil, pour qu'il vérifie qu'il n'a pas oublié de pointer.
+   */
+  @GetMapping("/mes-pointages")
+  public ApiResponse<List<PointageReponse>> mesPointages(
+      @RequestHeader(value = EN_TETE_JETON_APPAREIL, required = false) String jetonAppareil) {
+    UUID employeId = activationService.employeAppareilPersonnel(jetonAppareil);
+    return ApiResponse.ok(pointageService.pointagesRecents(employeId, 5));
+  }
+
+  /**
+   * EF-ATT-19 : révocation en self-service depuis le lien reçu par e-mail — aucune session/en-tête
+   * d'appareil requis, le jeton lui-même est la preuve d'intention.
+   */
+  @PostMapping("/revoquer-perte")
+  public ApiResponse<Void> revoquerParJeton(@Valid @RequestBody RevocationParJetonRequete requete) {
+    activationService.revoquerParJeton(requete.jeton());
+    return ApiResponse.ok();
   }
 
   /**
@@ -66,6 +112,20 @@ public class KiosqueController {
   @ExceptionHandler(QrCodeInvalideException.class)
   ResponseEntity<ApiResponse<Void>> gererQrInvalide(QrCodeInvalideException ex) {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(SiteQrInvalideException.class)
+  ResponseEntity<ApiResponse<Void>> gererSiteQrInvalide(SiteQrInvalideException ex) {
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  // EF-ATT-19 : jeton de révocation inconnu/déjà utilisé — message générique, pas de distinction
+  // avec "jamais existé" pour ne rien révéler sur la validité passée du lien.
+  @ExceptionHandler(KiosqueActivationIntrouvableException.class)
+  ResponseEntity<ApiResponse<Void>> gererJetonRevocationInvalide(
+      KiosqueActivationIntrouvableException ex) {
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+        .body(ApiResponse.error("Lien de révocation invalide ou déjà utilisé."));
   }
 
   @ExceptionHandler(DoubleEntreeException.class)

@@ -87,6 +87,24 @@ public class EmployeController {
         .body(contenu);
   }
 
+  // EF-DOC-15 : export mensuel paie — Admin uniquement (données salariales), contrairement à
+  // l'export fiche employé ci-dessus ouvert au Manager.
+  @GetMapping("/export-paie")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ResponseEntity<byte[]> exporterPaie(
+      @RequestParam FormatExport format,
+      @RequestParam @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM")
+          java.time.YearMonth mois) {
+    byte[] contenu = employeService.exporterPaie(format, mois);
+    String nomFichier = "paie_" + mois + format.extension();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(format.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(nomFichier).build().toString())
+        .body(contenu);
+  }
+
   @GetMapping("/{id}")
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<EmployeReponse> detail(@PathVariable UUID id) {
@@ -116,6 +134,17 @@ public class EmployeController {
       @PathVariable UUID id, @RequestBody SujetStageRequete requete) {
     return ApiResponse.ok(
         EmployeReponse.depuis(employeService.modifierSujetStage(id, requete.sujetStage())));
+  }
+
+  // EF-DOC-14 : donnée sensible (salaire), Admin uniquement — contrairement au sujet de stage
+  // ci-dessus, jamais ouvert au Manager.
+  @PutMapping("/{id}/salaire")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<EmployeReponse> modifierSalaire(
+      @PathVariable UUID id, @RequestBody SalaireRequete requete) {
+    return ApiResponse.ok(
+        EmployeReponse.depuis(
+            employeService.modifierSalaireBrutMensuel(id, requete.salaireBrutMensuel())));
   }
 
   @PostMapping("/{id}/transferer")

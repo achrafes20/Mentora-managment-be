@@ -26,6 +26,12 @@ public record EmployeReponse(
     String sexe,
     String cin,
     String sujetStage,
+    String numeroCnss,
+    String numeroAmo,
+    String numeroCimr,
+    String rib,
+    LocalDate periodeEssaiFinLe,
+    java.math.BigDecimal salaireBrutMensuel,
     Instant creeLe,
     Instant modifieLe) {
 
@@ -52,6 +58,12 @@ public record EmployeReponse(
         employe.getSexe() == null ? null : employe.getSexe().name(),
         employe.getCin(),
         employe.getSujetStage(),
+        employe.getNumeroCnss(),
+        employe.getNumeroAmo(),
+        employe.getNumeroCimr(),
+        employe.getRib(),
+        employe.getPeriodeEssaiFinLe(),
+        employe.getSalaireBrutMensuel(),
         employe.getCreeLe(),
         employe.getModifieLe());
   }

@@ -41,10 +41,17 @@ class OffreEmploiService {
   }
 
   @Transactional(readOnly = true)
-  List<OffreEmploi> lister(StatutOffreEmploi statut) {
-    return statut != null
-        ? offreEmploiRepository.findByStatut(statut)
-        : offreEmploiRepository.findAll();
+  List<OffreEmploi> lister(StatutOffreEmploi statut, String categorie) {
+    if (statut != null && categorie != null) {
+      return offreEmploiRepository.findByStatutAndCategorie(statut, categorie);
+    }
+    if (statut != null) {
+      return offreEmploiRepository.findByStatut(statut);
+    }
+    if (categorie != null) {
+      return offreEmploiRepository.findByCategorie(categorie);
+    }
+    return offreEmploiRepository.findAll();
   }
 
   @Transactional(readOnly = true)
@@ -62,7 +69,8 @@ class OffreEmploiService {
                 requete.description(),
                 requete.departementId(),
                 MotsClesUtils.versJsonNode(requete.motsClesRequis(), objectMapper),
-                creePar));
+                creePar,
+                requete.categorie()));
     evenements.publishEvent(
         new OffreEmploiModifieEvent(offre.getId(), "creation", offre.getIntitule()));
     // EF-REC-11/12 : à la création, on réévalue les candidatures "en_attente" contre les
@@ -77,7 +85,8 @@ class OffreEmploiService {
         requete.intitule(),
         requete.description(),
         requete.departementId(),
-        MotsClesUtils.versJsonNode(requete.motsClesRequis(), objectMapper));
+        MotsClesUtils.versJsonNode(requete.motsClesRequis(), objectMapper),
+        requete.categorie());
     evenements.publishEvent(
         new OffreEmploiModifieEvent(offre.getId(), "modification", offre.getIntitule()));
     return offre;

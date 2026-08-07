@@ -127,8 +127,13 @@ class EmployeImportProcessor {
                           null,
                           null,
                           null,
-                          // Sexe/CIN/sujet de stage : idem, pas encore des champs mappés par
-                          // l'assistant d'import.
+                          // Sexe/CIN/sujet de stage/conformité RH Maroc : idem, pas encore des
+                          // champs mappés par l'assistant d'import.
+                          null,
+                          null,
+                          null,
+                          null,
+                          null,
                           null,
                           null,
                           null))
@@ -158,6 +163,11 @@ class EmployeImportProcessor {
                 dateEmbauche,
                 typeContrat,
                 dateFinContratPrevue,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,

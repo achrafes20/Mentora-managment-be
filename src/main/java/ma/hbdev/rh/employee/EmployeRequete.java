@@ -36,4 +36,10 @@ public record EmployeRequete(
     SexeEmploye sexe,
     String cin,
     // Optionnel, sans objet hors STAGIAIRE/STAGIAIRE_REMUNERE (cf. Employe#sujetStage).
-    String sujetStage) {}
+    String sujetStage,
+    // EF-EMP-14 : conformité RH Maroc — tous optionnels (non connus/applicables à la création).
+    String numeroCnss,
+    String numeroAmo,
+    String numeroCimr,
+    String rib,
+    LocalDate periodeEssaiFinLe) {}

@@ -257,6 +257,26 @@ class AdministrativeService {
           throw new IllegalArgumentException("Le motif est obligatoire");
         }
       }
+      case conge_mariage, conge_naissance, conge_deces, conge_maladie ->
+          validerCongeSpecial(requete);
+    }
+  }
+
+  // EF-ADM-14 : congés légaux (mariage/naissance/décès/maladie) — juste une période valide,
+  // volontairement aucun contrôle de solde ni de période de blocage (contrairement à
+  // validerConge()) : ce sont des droits légaux distincts du congé payé, jamais décomptés du
+  // quota. La maladie exige en plus un justificatif déjà téléversé (EF-ADM-14).
+  private void validerCongeSpecial(DemandeAdministrativeRequete requete) {
+    if (requete.dateDebut() == null) {
+      throw new IllegalArgumentException("Une date de debut est requise");
+    }
+    LocalDate fin = requete.dateFin() == null ? requete.dateDebut() : requete.dateFin();
+    if (fin.isBefore(requete.dateDebut())) {
+      throw new IllegalArgumentException("La date de fin doit etre apres la date de debut");
+    }
+    if (requete.typeDemande() == TypeDemandeAdministrative.conge_maladie
+        && requete.fichierDocumentLibreId() == null) {
+      throw new IllegalArgumentException("Un justificatif est requis pour un conge maladie");
     }
   }
 

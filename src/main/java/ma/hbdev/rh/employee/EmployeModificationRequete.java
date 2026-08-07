@@ -19,4 +19,9 @@ public record EmployeModificationRequete(
     LocalDate dateFinStagePrevue,
     SexeEmploye sexe,
     String cin,
-    String sujetStage) {}
+    String sujetStage,
+    String numeroCnss,
+    String numeroAmo,
+    String numeroCimr,
+    String rib,
+    LocalDate periodeEssaiFinLe) {}

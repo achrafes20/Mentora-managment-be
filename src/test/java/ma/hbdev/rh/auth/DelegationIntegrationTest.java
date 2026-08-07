@@ -191,7 +191,7 @@ class DelegationIntegrationTest {
     String requete =
         objectMapper.writeValueAsString(
             new OffreEmploiRequete(
-                "Développeur backend", "Description", departementId, List.of("java")));
+                "Développeur backend", "Description", departementId, List.of("java"), null));
     return mockMvc.perform(
         post("/api/offres")
             .header("Authorization", "Bearer " + token)
@@ -418,7 +418,11 @@ class DelegationIntegrationTest {
                 .content(
                     objectMapper.writeValueAsString(
                         new OffreEmploiRequete(
-                            "Développeur backend", "Description", departementId, List.of("java")))))
+                            "Développeur backend",
+                            "Description",
+                            departementId,
+                            List.of("java"),
+                            null))))
         .andExpect(status().isCreated());
 
     MvcResult ingestion =
@@ -469,7 +473,11 @@ class DelegationIntegrationTest {
                 .content(
                     objectMapper.writeValueAsString(
                         new OffreEmploiRequete(
-                            "Développeur backend", "Description", departementId, List.of("java")))))
+                            "Développeur backend",
+                            "Description",
+                            departementId,
+                            List.of("java"),
+                            null))))
         .andExpect(status().isCreated());
 
     MvcResult ingestion =
