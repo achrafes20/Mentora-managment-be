@@ -44,6 +44,11 @@ public class SecurityConfig {
     // KiosqueActivationController) exige elle une session JWT Admin/délégué et ne doit pas passer
     // ici.
     "/api/kiosque/scan",
+    // EF-ATT-16 : même principe que /scan ci-dessus, pour l'appareil personnel de l'employé —
+    // l'identité vient du jeton d'appareil vérifié en base, pas d'une session JWT.
+    "/api/kiosque/scan-personnel",
+    "/api/kiosque/mes-pointages",
+    "/api/kiosque/revoquer-perte",
     "/api/kiosque/activation/statut",
     "/api/kiosque/activation/verifier",
     "/api/fichiers/**",

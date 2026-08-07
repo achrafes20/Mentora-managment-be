@@ -33,9 +33,12 @@ public class OffreEmploiController {
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<List<OffreEmploiReponse>> lister(
-      @RequestParam(required = false) StatutOffreEmploi statut) {
+      @RequestParam(required = false) StatutOffreEmploi statut,
+      @RequestParam(required = false) String categorie) {
     return ApiResponse.ok(
-        offreEmploiService.lister(statut).stream().map(OffreEmploiReponse::depuis).toList());
+        offreEmploiService.lister(statut, categorie).stream()
+            .map(OffreEmploiReponse::depuis)
+            .toList());
   }
 
   @GetMapping("/{id}")

@@ -129,7 +129,8 @@ class RecruitmentIntegrationTest {
   private String creerOffre(String intitule, List<String> motsCles) throws Exception {
     String requete =
         objectMapper.writeValueAsString(
-            new OffreEmploiRequete(intitule, "Description " + intitule, departementId, motsCles));
+            new OffreEmploiRequete(
+                intitule, "Description " + intitule, departementId, motsCles, null));
     String reponse =
         mockMvc
             .perform(
@@ -160,7 +161,7 @@ class RecruitmentIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        new OffreEmploiRequete("Autre poste", null, departementId, null))))
+                        new OffreEmploiRequete("Autre poste", null, departementId, null, null))))
         .andExpect(status().isForbidden());
 
     mockMvc.perform(get("/api/offres")).andExpect(status().isUnauthorized());

@@ -95,6 +95,27 @@ class Employe {
   @Column(name = "candidature_origine_id")
   private UUID candidatureOrigineId;
 
+  // EF-EMP-14 : conformité RH Maroc — identifiants organismes sociaux, RIB et fin de période
+  // d'essai. Tous optionnels (non connus/applicables à la création selon le profil).
+  @Column(name = "numero_cnss")
+  private String numeroCnss;
+
+  @Column(name = "numero_amo")
+  private String numeroAmo;
+
+  @Column(name = "numero_cimr")
+  private String numeroCimr;
+
+  @Column private String rib;
+
+  @Column(name = "periode_essai_fin_le")
+  private LocalDate periodeEssaiFinLe;
+
+  // EF-DOC-14 : nécessaire pour générer l'attestation de salaire — optionnel, jamais affiché sur
+  // les autres certificats/attestations.
+  @Column(name = "salaire_brut_mensuel")
+  private java.math.BigDecimal salaireBrutMensuel;
+
   @Column(name = "cree_le", insertable = false, updatable = false)
   private Instant creeLe;
 
@@ -118,7 +139,12 @@ class Employe {
       UUID candidatureOrigineId,
       SexeEmploye sexe,
       String cin,
-      String sujetStage) {
+      String sujetStage,
+      String numeroCnss,
+      String numeroAmo,
+      String numeroCimr,
+      String rib,
+      LocalDate periodeEssaiFinLe) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -134,6 +160,11 @@ class Employe {
     this.sexe = sexe;
     this.cin = cin;
     this.sujetStage = sujetStage;
+    this.numeroCnss = numeroCnss;
+    this.numeroAmo = numeroAmo;
+    this.numeroCimr = numeroCimr;
+    this.rib = rib;
+    this.periodeEssaiFinLe = periodeEssaiFinLe;
   }
 
   void modifier(
@@ -148,7 +179,12 @@ class Employe {
       LocalDate dateFinStagePrevue,
       SexeEmploye sexe,
       String cin,
-      String sujetStage) {
+      String sujetStage,
+      String numeroCnss,
+      String numeroAmo,
+      String numeroCimr,
+      String rib,
+      LocalDate periodeEssaiFinLe) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -161,6 +197,17 @@ class Employe {
     this.sexe = sexe;
     this.cin = cin;
     this.sujetStage = sujetStage;
+    this.numeroCnss = numeroCnss;
+    this.numeroAmo = numeroAmo;
+    this.numeroCimr = numeroCimr;
+    this.rib = rib;
+    this.periodeEssaiFinLe = periodeEssaiFinLe;
+  }
+
+  // EF-DOC-14 : champ sensible, à part du formulaire fiche standard — même principe que
+  // definirSujetStage (setter dédié plutôt qu'un 21e paramètre dans modifier()).
+  void definirSalaireBrutMensuel(java.math.BigDecimal salaireBrutMensuel) {
+    this.salaireBrutMensuel = salaireBrutMensuel;
   }
 
   void transferer(Departement nouveauDepartement, UUID nouveauManagerId) {
@@ -260,6 +307,30 @@ class Employe {
 
   UUID getCandidatureOrigineId() {
     return candidatureOrigineId;
+  }
+
+  String getNumeroCnss() {
+    return numeroCnss;
+  }
+
+  String getNumeroAmo() {
+    return numeroAmo;
+  }
+
+  String getNumeroCimr() {
+    return numeroCimr;
+  }
+
+  String getRib() {
+    return rib;
+  }
+
+  LocalDate getPeriodeEssaiFinLe() {
+    return periodeEssaiFinLe;
+  }
+
+  java.math.BigDecimal getSalaireBrutMensuel() {
+    return salaireBrutMensuel;
   }
 
   Instant getCreeLe() {

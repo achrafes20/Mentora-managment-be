@@ -29,6 +29,9 @@ interface EmployeRepository
 
   List<Employe> findByDepartementIdAndStatut(UUID departementId, StatutActifInactif statut);
 
+  // EF-DOC-15 : export mensuel paie — périmètre = tous les employés actifs.
+  List<Employe> findByStatut(StatutActifInactif statut);
+
   // EF-EMP-XX : désactivation automatique quotidienne des contrats/stages arrivés à échéance.
   List<Employe> findByStatutAndTypeContratAndDateFinContratPrevueLessThan(
       StatutActifInactif statut, TypeContratEmploye typeContrat, LocalDate date);

@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.export.FormatExport;
+import ma.hbdev.rh.shared.file.FileStorageService;
+import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import ma.hbdev.rh.shared.web.PagedResponse;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/demandes-administratives")
@@ -33,16 +36,19 @@ class AdministrativeController {
   private final JourFerieService jourFerieService;
   private final PeriodeBlocageCongesService periodeBlocageCongesService;
   private final PolitiqueCongeService politiqueCongeService;
+  private final FileStorageService fileStorageService;
 
   AdministrativeController(
       AdministrativeService service,
       JourFerieService jourFerieService,
       PeriodeBlocageCongesService periodeBlocageCongesService,
-      PolitiqueCongeService politiqueCongeService) {
+      PolitiqueCongeService politiqueCongeService,
+      FileStorageService fileStorageService) {
     this.service = service;
     this.jourFerieService = jourFerieService;
     this.periodeBlocageCongesService = periodeBlocageCongesService;
     this.politiqueCongeService = politiqueCongeService;
+    this.fileStorageService = fileStorageService;
   }
 
   @GetMapping
@@ -81,6 +87,15 @@ class AdministrativeController {
   ApiResponse<DemandeAdministrativeReponse> creer(
       @Valid @RequestBody DemandeAdministrativeRequete requete) {
     return ApiResponse.ok(service.creer(requete));
+  }
+
+  // EF-ADM-14 : justificatif (arrêt de travail...) téléversé avant la création de la demande —
+  // même mécanisme que la photo/les documents employé (shared/file), l'UUID retourné est ensuite
+  // passé en fichierDocumentLibreId dans DemandeAdministrativeRequete.
+  @PostMapping("/justificatif")
+  ApiResponse<UUID> televerserJustificatif(@RequestParam("fichier") MultipartFile fichier) {
+    UUID televersePar = CurrentUser.id().orElse(null);
+    return ApiResponse.ok(fileStorageService.televerser(fichier, televersePar).id());
   }
 
   // EF-AUTH-11/12 : décision + actions adjacentes ouvertes au délégué actif, même précédent que

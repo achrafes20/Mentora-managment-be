@@ -18,6 +18,7 @@ import ma.hbdev.rh.shared.export.TableauExportService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
@@ -84,17 +85,50 @@ public class PointageService {
         qrCodeService
             .resoudreParValeur(requete.valeurQr())
             .orElseThrow(QrCodeInvalideException::new);
+    return scannerPourEmploye(qr.getEmployeId(), qr.getId(), requete.typeScan());
+  }
 
+  /**
+   * EF-ATT-16 : cœur du scan, indépendant de la lecture d'un QR — utilisé par {@link
+   * #scanner(ScanRequete)} (kiosque partagé, identité prouvée par le QR badge scanné) et par
+   * l'appareil personnel (identité déjà prouvée par l'appairage du téléphone, cf.
+   * KiosqueController#scannerPersonnel) où il n'y a pas de QR à lire.
+   */
+  /**
+   * EF-ATT-16 : scan depuis l'appareil personnel de l'employé — l'identité est déjà prouvée par
+   * l'appairage du téléphone (cf. KiosqueActivationService#employeAppareilPersonnel), donc pas de
+   * QR à lire ; on rattache tout de même le pointage au QR actif de l'employé (colonne {@code
+   * qr_code_id} non nullable) plutôt que d'en faire une colonne nullable pour ce seul cas.
+   */
+  public Pointage scannerPersonnel(UUID employeId, TypeScanPointage typeScan) {
+    QrCode qr = qrCodeService.trouverActifDe(employeId).orElseThrow(QrCodeInvalideException::new);
+    return scannerPourEmploye(employeId, qr.getId(), typeScan);
+  }
+
+  /**
+   * EF-ATT-17 : historique perso affiché sur /pointage-mobile — rassure l'employé qu'il n'a pas
+   * oublié de pointer. Identité déjà prouvée par l'appairage de l'appareil (appelant), donc pas de
+   * périmètre Manager à appliquer ici (contrairement à lister()) — un employé ne voit que le sien.
+   */
+  @Transactional(readOnly = true)
+  public List<PointageReponse> pointagesRecents(UUID employeId, int limite) {
+    return pointageRepository
+        .findByEmployeId(employeId, PageRequest.of(0, limite))
+        .map(PointageReponse::depuis)
+        .getContent();
+  }
+
+  Pointage scannerPourEmploye(UUID employeId, UUID qrCodeId, TypeScanPointage typeScan) {
     Instant maintenant = Instant.now();
     LocalDate dateAujourdHui = maintenant.atZone(ZONE).toLocalDate();
 
     // Deux scans d'entrée consécutifs → rejet
-    if (requete.typeScan() == TypeScanPointage.entree) {
+    if (typeScan == TypeScanPointage.entree) {
       boolean dejaEntre =
-          pointageRepository.findDerniereEntree(qr.getEmployeId()).isPresent()
+          pointageRepository.findDerniereEntree(employeId).isPresent()
               && !avecSortieDepuis(
-                  qr.getEmployeId(),
-                  pointageRepository.findDerniereEntree(qr.getEmployeId()).get().getHorodatage());
+                  employeId,
+                  pointageRepository.findDerniereEntree(employeId).get().getHorodatage());
       if (dejaEntre) {
         throw new DoubleEntreeException();
       }
@@ -104,8 +138,7 @@ public class PointageService {
     UUID horaireId = horaire != null ? horaire.getId() : null;
 
     Pointage pointage =
-        pointageRepository.save(
-            new Pointage(qr.getEmployeId(), qr.getId(), requete.typeScan(), maintenant, horaireId));
+        pointageRepository.save(new Pointage(employeId, qrCodeId, typeScan, maintenant, horaireId));
 
     // Détection immédiate des anomalies "retard" et "départ anticipé" si horaire disponible et
     // hors télétravail planifié (EF-ATT-04/09 — même court-circuit que
@@ -113,7 +146,7 @@ public class PointageService {
     // passe au bureau/scanne à distance ne doit jamais être marqué en retard sur un jour où il
     // n'est de toute façon pas censé arriver à l'horaire de référence sur site).
     if (horaire != null
-        && !planningTeletravailRepository.estEnTeletravail(qr.getEmployeId(), dateAujourdHui)) {
+        && !planningTeletravailRepository.estEnTeletravail(employeId, dateAujourdHui)) {
       detecterAnomalieImmediate(pointage, horaire);
     }
 
@@ -395,6 +428,89 @@ public class PointageService {
     }
     return tableauExportService.generer(
         format, "Feuille de présence", ENTETES_EXPORT_PRESENCE, lignes);
+  }
+
+  /**
+   * EF-ATT-15 : présence du jour même — un statut par employé du périmètre, calculé en direct
+   * (contrairement à {@code absence_totale}, détectée seulement par le balayage nocturne sur un
+   * jour déjà terminé — cf. AnomalieService). Même logique de classification que {@link
+   * #ligneExportJour}, adaptée : "Absent" ici ne préjuge pas d'une anomalie (la journée n'est pas
+   * terminée), juste qu'aucun pointage n'a encore été vu.
+   */
+  @Transactional(readOnly = true)
+  public List<PresenceAujourdhuiReponse> aujourdhui() {
+    LocalDate jour = LocalDate.now(ZONE);
+    List<UUID> employeIds = employesDansPerimetre(null);
+    if (employeIds.isEmpty()) {
+      return List.of();
+    }
+    Instant debutInstant = jour.atStartOfDay(ZONE).toInstant();
+    Instant finInstant = jour.plusDays(1).atStartOfDay(ZONE).toInstant();
+    Map<UUID, List<Pointage>> pointagesParEmploye =
+        pointageRepository
+            .findByEmployeIdInAndHorodatageBetween(employeIds, debutInstant, finInstant)
+            .stream()
+            .collect(Collectors.groupingBy(Pointage::getEmployeId));
+
+    List<PresenceAujourdhuiReponse> resultat = new ArrayList<>();
+    for (UUID id : employeIds) {
+      EmployeInfoPresence employe = employeInfo(id);
+      String nomComplet = employe == null ? id.toString() : employe.nomComplet();
+      List<PlanningTeletravail> plannings =
+          planningTeletravailRepository.findByEmployeIdOrderByDateDebutDesc(id);
+      List<Pointage> pointagesJour = pointagesParEmploye.getOrDefault(id, List.of());
+      List<PeriodeCongeApprouve> conges = congesApprouves(id, jour, jour);
+      resultat.add(statutAujourdhui(id, nomComplet, jour, plannings, pointagesJour, conges));
+    }
+    return resultat;
+  }
+
+  private static PresenceAujourdhuiReponse statutAujourdhui(
+      UUID employeId,
+      String nomComplet,
+      LocalDate jour,
+      List<PlanningTeletravail> plannings,
+      List<Pointage> pointagesJour,
+      List<PeriodeCongeApprouve> conges) {
+    TypeJourSemaine jourSemaine = TypeJourSemaine.depuis(jour.getDayOfWeek());
+    boolean enConge =
+        conges.stream().anyMatch(c -> !jour.isBefore(c.debut()) && !jour.isAfter(c.fin()));
+    boolean teletravail =
+        plannings.stream()
+            .anyMatch(
+                p ->
+                    !jour.isBefore(p.getDateDebut())
+                        && (p.getDateFin() == null || !jour.isAfter(p.getDateFin()))
+                        && p.getJours().stream().anyMatch(j -> j.getJourSemaine() == jourSemaine));
+    Pointage entree =
+        pointagesJour.stream()
+            .filter(p -> p.getTypeScan() == TypeScanPointage.entree)
+            .findFirst()
+            .orElse(null);
+    Pointage sortie =
+        pointagesJour.stream()
+            .filter(p -> p.getTypeScan() == TypeScanPointage.sortie)
+            .findFirst()
+            .orElse(null);
+
+    StatutPresenceJour statut;
+    if (enConge) {
+      statut = StatutPresenceJour.conge;
+    } else if (teletravail) {
+      statut = StatutPresenceJour.teletravail;
+    } else if (entree != null && sortie != null) {
+      statut = StatutPresenceJour.parti;
+    } else if (entree != null) {
+      statut = StatutPresenceJour.present;
+    } else {
+      statut = StatutPresenceJour.absent;
+    }
+    return new PresenceAujourdhuiReponse(
+        employeId,
+        nomComplet,
+        statut.name(),
+        entree == null ? null : entree.getHorodatage(),
+        sortie == null ? null : sortie.getHorodatage());
   }
 
   /**

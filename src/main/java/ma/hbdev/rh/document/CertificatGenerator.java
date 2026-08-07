@@ -141,6 +141,66 @@ class CertificatGenerator {
     return htmlRenderer.rendre(html);
   }
 
+  /**
+   * Attestation de salaire — même éligibilité que l'attestation de travail (actif, CDI/CDD),
+   * gabarit identique avec un paragraphe salaire à la place de "occupe toujours ce poste".
+   */
+  byte[] genererAttestationSalaire(
+      String prenom,
+      String nom,
+      String cin,
+      String poste,
+      String typeContrat,
+      LocalDate dateEmbauche,
+      String sexeEmploye,
+      java.math.BigDecimal salaireBrutMensuel) {
+    IdentiteEntrepriseReponse identite = identiteEntrepriseService.obtenir();
+
+    String blocCin =
+        (cin == null || cin.isBlank()) ? "" : ", titulaire de la CIN n° " + echapper(cin);
+
+    String html =
+        CertificatHtmlRenderer.chargerTemplate("attestation-salaire.html")
+            .replace(
+                "{{raisonSociale}}", valeurOuVide(identite.raisonSociale(), "HB Développement"))
+            .replace("{{adresse}}", valeurOuVide(identite.adresse(), ""))
+            .replace("{{ligneIdentifiantsLegaux}}", ligneIdentifiantsLegaux(identite))
+            .replace("{{logoImgTag}}", fichierImgTag(identite.logoFichierId(), "Logo", null))
+            .replace(
+                "{{introSignataire}}",
+                introSignataire(identite, "attestons par la présente", "atteste par la présente"))
+            .replace("{{civiliteEmploye}}", civilite(sexeEmploye))
+            .replace("{{prenom}}", echapper(prenom))
+            .replace("{{nom}}", echapper(nom))
+            .replace("{{blocCin}}", blocCin)
+            .replace("{{estEmploye}}", estEmploye(sexeEmploye))
+            .replace("{{poste}}", echapper(valeurOuVide(poste, "")))
+            .replace("{{dureeContrat}}", dureeContrat(typeContrat))
+            .replace("{{dateEmbauche}}", format(dateEmbauche))
+            .replace("{{pronomEmploye}}", pronom(sexeEmploye))
+            .replace("{{salaireBrutMensuel}}", formatMontant(salaireBrutMensuel))
+            .replace("{{interesseEmploye}}", interesse(sexeEmploye))
+            .replace("{{ville}}", echapper(valeurOuVide(identite.ville(), "Tétouan")))
+            .replace("{{dateGeneration}}", format(LocalDate.now()))
+            .replace("{{blocSignature}}", blocSignature(identite))
+            .replace(
+                "{{signataireNomAffiche}}", echapper(valeurOuVide(identite.signataireNom(), "")))
+            .replace(
+                "{{signataireFonctionAffichee}}",
+                echapper(
+                    valeurOuVide(
+                        identite.signataireFonction(), "La Direction des Ressources Humaines")));
+
+    return htmlRenderer.rendre(html);
+  }
+
+  private String formatMontant(java.math.BigDecimal montant) {
+    if (montant == null) {
+      return "___________";
+    }
+    return montant.setScale(2, java.math.RoundingMode.HALF_UP) + " MAD";
+  }
+
   private String ligneIdentifiantsLegaux(IdentiteEntrepriseReponse identite) {
     java.util.List<String> parties = new java.util.ArrayList<>();
     if (identite.ice() != null && !identite.ice().isBlank()) {

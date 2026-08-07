@@ -95,6 +95,14 @@ class DocumentRhController {
     return reponsePdf(documentRhService.apercuAttestationTravail(employeId));
   }
 
+  @GetMapping(
+      value = "/employes/{employeId}/attestation-salaire/apercu",
+      produces = "application/pdf")
+  @PreAuthorize("hasRole('ADMIN')")
+  ResponseEntity<byte[]> apercuAttestationSalaire(@PathVariable UUID employeId) {
+    return reponsePdf(documentRhService.apercuAttestationSalaire(employeId));
+  }
+
   private ResponseEntity<byte[]> reponsePdf(byte[] pdf) {
     return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF).body(pdf);
   }
@@ -125,6 +133,16 @@ class DocumentRhController {
     UUID utilisateurConnecteId = CurrentUser.id().orElse(null);
     EnvoiDocument envoi =
         documentRhService.envoyerAttestationTravail(employeId, utilisateurConnecteId);
+    return ApiResponse.ok(EnvoiDocumentResponse.depuis(envoi));
+  }
+
+  @PostMapping("/employes/{employeId}/attestation-salaire")
+  @ResponseStatus(HttpStatus.CREATED)
+  @PreAuthorize("hasRole('ADMIN')")
+  ApiResponse<EnvoiDocumentResponse> envoyerAttestationSalaire(@PathVariable UUID employeId) {
+    UUID utilisateurConnecteId = CurrentUser.id().orElse(null);
+    EnvoiDocument envoi =
+        documentRhService.envoyerAttestationSalaire(employeId, utilisateurConnecteId);
     return ApiResponse.ok(EnvoiDocumentResponse.depuis(envoi));
   }
 

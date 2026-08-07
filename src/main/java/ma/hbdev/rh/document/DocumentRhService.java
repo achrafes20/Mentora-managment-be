@@ -106,6 +106,13 @@ class DocumentRhService {
     return genererPdfAttestationTravail(employe);
   }
 
+  byte[] apercuAttestationSalaire(UUID employeId) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    validerEligibiliteAttestation(employe);
+    validerSalaireRenseigne(employe);
+    return genererPdfAttestationSalaire(employe);
+  }
+
   private byte[] genererPdfCertificatStage(EmployeReponse employe, String sujetStage) {
     return certificatGenerator.genererCertificatStage(
         employe.prenom(),
@@ -140,6 +147,18 @@ class DocumentRhService {
         employe.sexe());
   }
 
+  private byte[] genererPdfAttestationSalaire(EmployeReponse employe) {
+    return certificatGenerator.genererAttestationSalaire(
+        employe.prenom(),
+        employe.nom(),
+        employe.cin(),
+        employe.poste(),
+        employe.typeContrat(),
+        employe.dateEmbauche(),
+        employe.sexe(),
+        employe.salaireBrutMensuel());
+  }
+
   private void validerEligibiliteAttestation(EmployeReponse employe) {
     if (!"actif".equals(employe.statut())) {
       throw new IllegalArgumentException(
@@ -148,6 +167,14 @@ class DocumentRhService {
     if (!"CDI".equals(employe.typeContrat()) && !"CDD".equals(employe.typeContrat())) {
       throw new IllegalArgumentException(
           "L'attestation de travail n'est disponible que pour un employé CDI ou CDD.");
+    }
+  }
+
+  private void validerSalaireRenseigne(EmployeReponse employe) {
+    if (employe.salaireBrutMensuel() == null) {
+      throw new IllegalArgumentException(
+          "Le salaire brut mensuel doit être renseigné sur la fiche avant de générer "
+              + "l'attestation de salaire.");
     }
   }
 
@@ -198,6 +225,23 @@ class DocumentRhService {
         TypeDocumentRh.attestation_travail,
         "Votre attestation de travail",
         "Bonjour,\n\nVeuillez trouver ci-joint votre attestation de travail.\n\nCordialement, RH",
+        envoyePar);
+  }
+
+  /** Attestation de salaire — même éligibilité que l'attestation de travail, salaire requis. */
+  EnvoiDocument envoyerAttestationSalaire(UUID employeId, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    validerEligibiliteAttestation(employe);
+    validerSalaireRenseigne(employe);
+    byte[] pdf = genererPdfAttestationSalaire(employe);
+
+    return traiterEnvoi(
+        employe,
+        pdf,
+        "attestation_salaire.pdf",
+        TypeDocumentRh.attestation_salaire,
+        "Votre attestation de salaire",
+        "Bonjour,\n\nVeuillez trouver ci-joint votre attestation de salaire.\n\nCordialement, RH",
         envoyePar);
   }
 

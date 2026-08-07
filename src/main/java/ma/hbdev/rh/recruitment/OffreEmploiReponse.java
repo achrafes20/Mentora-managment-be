@@ -11,6 +11,7 @@ public record OffreEmploiReponse(
     UUID departementId,
     String statut,
     List<String> motsClesRequis,
+    String categorie,
     UUID creePar,
     Instant creeLe,
     Instant fermeeLe) {
@@ -23,6 +24,7 @@ public record OffreEmploiReponse(
         offre.getDepartementId(),
         offre.getStatut().name(),
         MotsClesUtils.versListe(offre.getMotsClesRequis()),
+        offre.getCategorie(),
         offre.getCreePar(),
         offre.getCreeLe(),
         offre.getFermeeLe());

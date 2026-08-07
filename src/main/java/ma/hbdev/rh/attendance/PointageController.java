@@ -2,6 +2,7 @@ package ma.hbdev.rh.attendance;
 
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.export.FormatExport;
 import ma.hbdev.rh.shared.web.ApiResponse;
@@ -55,6 +56,16 @@ public class PointageController {
       @PathVariable UUID employeId, Pageable pageable) {
     var page = pointageService.listerParEmploye(employeId, pageable);
     return ApiResponse.ok(PagedResponse.of(page.map(PointageReponse::depuis)));
+  }
+
+  /**
+   * EF-ATT-15 : présence du jour même, un statut par employé du périmètre — distinct du tableau de
+   * bord ci-dessous, qui agrège l'historique sur 30 jours passés.
+   */
+  @GetMapping("/aujourdhui")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  public ApiResponse<List<PresenceAujourdhuiReponse>> aujourdhui() {
+    return ApiResponse.ok(pointageService.aujourdhui());
   }
 
   /** Tableau de bord Présence : taux de couverture, anomalies récurrentes, répartition par type. */
