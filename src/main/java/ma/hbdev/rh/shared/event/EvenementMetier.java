@@ -24,6 +24,16 @@ public interface EvenementMetier {
   }
 
   /**
+   * Faux pour un evenement systeme sans decision humaine derriere (ex. franchissement d'un seuil
+   * calcule, transition automatique de pipeline) — reste notifiable si {@link #notification()} le
+   * prevoit, mais n'encombre pas journal_audit d'une ligne sans valeur de tracabilite (qui a fait
+   * quoi). Vrai par defaut : c'est l'exception qui doit se signaler, pas l'inverse.
+   */
+  default boolean audite() {
+    return true;
+  }
+
+  /**
    * EF-AUTH-14 : vrai pour une action d'approbation, de rejet ou de décision de recrutement.
    * L'écouteur d'audit s'en sert pour marquer l'entrée comme réalisée en délégation lorsque
    * l'auteur courant est un délégué actif — jamais pour les actions de gestion de la délégation

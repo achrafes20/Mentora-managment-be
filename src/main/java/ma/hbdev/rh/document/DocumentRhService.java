@@ -1,6 +1,7 @@
 package ma.hbdev.rh.document;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.employee.EmployeReponse;
 import ma.hbdev.rh.employee.EmployeService;
@@ -9,6 +10,7 @@ import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.mail.RestClientFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ class DocumentRhService {
   private final String webhookUrl;
   private final String apiBaseUrl;
   private final NotificationPlanifieeRepository notificationPlanifieeRepository;
+  private final ApplicationEventPublisher evenements;
 
   DocumentRhService(
       EnvoiDocumentRhRepository envoiDocumentRepository,
@@ -36,7 +39,8 @@ class DocumentRhService {
       RestClient.Builder restClientBuilder,
       @Value("${app.n8n.base-url:http://localhost:5678}") String n8nBaseUrl,
       @Value("${app.api-base-url:http://localhost:8080}") String apiBaseUrl,
-      NotificationPlanifieeRepository notificationPlanifieeRepository) {
+      NotificationPlanifieeRepository notificationPlanifieeRepository,
+      ApplicationEventPublisher evenements) {
     this.envoiDocumentRepository = envoiDocumentRepository;
     this.employeService = employeService;
     this.certificatGenerator = certificatGenerator;
@@ -47,6 +51,18 @@ class DocumentRhService {
     this.webhookUrl = MailService.urlWebhookNotifyEmail(n8nBaseUrl);
     this.apiBaseUrl = apiBaseUrl.replaceAll("/+$", "");
     this.notificationPlanifieeRepository = notificationPlanifieeRepository;
+    this.evenements = evenements;
+  }
+
+  // EF-AUTH-03 : recuperer() applique le périmètre Manager (propre département) avant d'exposer
+  // l'historique — sans cet appel, un Manager pourrait lister l'historique de n'importe quel
+  // employeId en le devinant, malgré la restriction de lecture voulue.
+  @Transactional(readOnly = true)
+  List<EnvoiDocumentResponse> listerEnvois(UUID employeId) {
+    employeService.recuperer(employeId);
+    return envoiDocumentRepository.findByEmployeIdOrderByDateEnvoiDesc(employeId).stream()
+        .map(EnvoiDocumentResponse::depuis)
+        .toList();
   }
 
   EnvoiDocument renvoyerDepuisSurveillance(UUID notifId, UUID envoyePar) {
@@ -58,7 +74,7 @@ class DocumentRhService {
     UUID employeId = notif.getEmployeId();
     EnvoiDocument envoi;
     if (notif.getTypeSurveillance() == TypeFinSurveillee.fin_stage) {
-      envoi = envoyerCertificatStage(employeId, envoyePar);
+      envoi = envoyerCertificatStage(employeId, null, envoyePar);
     } else {
       envoi = envoyerCertificatTravail(employeId, envoyePar);
     }
@@ -73,15 +89,98 @@ class DocumentRhService {
     return envoi;
   }
 
-  EnvoiDocument envoyerCertificatStage(UUID employeId, UUID envoyePar) {
+  /**
+   * EF-DOC : aperçu du PDF avant envoi — même génération que l'envoi, sans e-mail ni persistance.
+   */
+  byte[] apercuCertificatStage(UUID employeId, String sujetStage) {
+    return genererPdfCertificatStage(trouverEmploye(employeId), sujetStage);
+  }
+
+  byte[] apercuCertificatTravail(UUID employeId) {
+    return genererPdfCertificatTravail(trouverEmploye(employeId));
+  }
+
+  byte[] apercuAttestationTravail(UUID employeId) {
     EmployeReponse employe = trouverEmploye(employeId);
-    byte[] pdf =
-        certificatGenerator.genererCertificatStage(
-            employe.prenom(),
-            employe.nom(),
-            employe.dateEmbauche(),
-            employe.dateFinStagePrevue(),
-            employe.poste());
+    validerEligibiliteAttestation(employe);
+    return genererPdfAttestationTravail(employe);
+  }
+
+  byte[] apercuAttestationSalaire(UUID employeId) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    validerEligibiliteAttestation(employe);
+    validerSalaireRenseigne(employe);
+    return genererPdfAttestationSalaire(employe);
+  }
+
+  private byte[] genererPdfCertificatStage(EmployeReponse employe, String sujetStage) {
+    return certificatGenerator.genererCertificatStage(
+        employe.prenom(),
+        employe.nom(),
+        employe.dateEmbauche(),
+        employe.dateFinStagePrevue(),
+        employe.poste(),
+        sujetStage,
+        employe.sexe());
+  }
+
+  private byte[] genererPdfCertificatTravail(EmployeReponse employe) {
+    return certificatGenerator.genererCertificatTravail(
+        employe.prenom(),
+        employe.nom(),
+        employe.cin(),
+        employe.poste(),
+        employe.typeContrat(),
+        employe.dateEmbauche(),
+        employe.dateDepart(),
+        employe.sexe());
+  }
+
+  private byte[] genererPdfAttestationTravail(EmployeReponse employe) {
+    return certificatGenerator.genererAttestationTravail(
+        employe.prenom(),
+        employe.nom(),
+        employe.cin(),
+        employe.poste(),
+        employe.typeContrat(),
+        employe.dateEmbauche(),
+        employe.sexe());
+  }
+
+  private byte[] genererPdfAttestationSalaire(EmployeReponse employe) {
+    return certificatGenerator.genererAttestationSalaire(
+        employe.prenom(),
+        employe.nom(),
+        employe.cin(),
+        employe.poste(),
+        employe.typeContrat(),
+        employe.dateEmbauche(),
+        employe.sexe(),
+        employe.salaireBrutMensuel());
+  }
+
+  private void validerEligibiliteAttestation(EmployeReponse employe) {
+    if (!"actif".equals(employe.statut())) {
+      throw new IllegalArgumentException(
+          "L'attestation de travail n'est disponible que pour un employé actif.");
+    }
+    if (!"CDI".equals(employe.typeContrat()) && !"CDD".equals(employe.typeContrat())) {
+      throw new IllegalArgumentException(
+          "L'attestation de travail n'est disponible que pour un employé CDI ou CDD.");
+    }
+  }
+
+  private void validerSalaireRenseigne(EmployeReponse employe) {
+    if (employe.salaireBrutMensuel() == null) {
+      throw new IllegalArgumentException(
+          "Le salaire brut mensuel doit être renseigné sur la fiche avant de générer "
+              + "l'attestation de salaire.");
+    }
+  }
+
+  EnvoiDocument envoyerCertificatStage(UUID employeId, String sujetStage, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    byte[] pdf = genererPdfCertificatStage(employe, sujetStage);
 
     return traiterEnvoi(
         employe,
@@ -96,13 +195,7 @@ class DocumentRhService {
 
   EnvoiDocument envoyerCertificatTravail(UUID employeId, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
-    byte[] pdf =
-        certificatGenerator.genererCertificatTravail(
-            employe.prenom(),
-            employe.nom(),
-            employe.dateEmbauche(),
-            employe.dateDepart(),
-            employe.poste());
+    byte[] pdf = genererPdfCertificatTravail(employe);
 
     return traiterEnvoi(
         employe,
@@ -111,6 +204,44 @@ class DocumentRhService {
         TypeDocumentRh.certificat_travail,
         "Votre certificat de travail",
         "Bonjour,\n\nVeuillez trouver ci-joint votre certificat de travail suite à votre départ.\n\nCordialement, RH",
+        envoyePar);
+  }
+
+  /**
+   * Attestation de travail — employé encore ACTIF, distincte de {@link #envoyerCertificatTravail}
+   * qui documente un départ. Deux validations propres à ce document (pas de contrainte CHECK
+   * équivalente en base, la table {@code envois_documents} reste générique pour tout {@link
+   * TypeDocumentRh}) :
+   */
+  EnvoiDocument envoyerAttestationTravail(UUID employeId, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    validerEligibiliteAttestation(employe);
+    byte[] pdf = genererPdfAttestationTravail(employe);
+
+    return traiterEnvoi(
+        employe,
+        pdf,
+        "attestation_travail.pdf",
+        TypeDocumentRh.attestation_travail,
+        "Votre attestation de travail",
+        "Bonjour,\n\nVeuillez trouver ci-joint votre attestation de travail.\n\nCordialement, RH",
+        envoyePar);
+  }
+
+  /** Attestation de salaire — même éligibilité que l'attestation de travail, salaire requis. */
+  EnvoiDocument envoyerAttestationSalaire(UUID employeId, UUID envoyePar) {
+    EmployeReponse employe = trouverEmploye(employeId);
+    validerEligibiliteAttestation(employe);
+    validerSalaireRenseigne(employe);
+    byte[] pdf = genererPdfAttestationSalaire(employe);
+
+    return traiterEnvoi(
+        employe,
+        pdf,
+        "attestation_salaire.pdf",
+        TypeDocumentRh.attestation_salaire,
+        "Votre attestation de salaire",
+        "Bonjour,\n\nVeuillez trouver ci-joint votre attestation de salaire.\n\nCordialement, RH",
         envoyePar);
   }
 
@@ -163,7 +294,14 @@ class DocumentRhService {
         new EnvoiDocument(
             employe.id(), typeDocument, fichier.id(), destinataire, messageFinal, envoyePar);
 
-    return envoiDocumentRepository.save(envoi);
+    EnvoiDocument saved = envoiDocumentRepository.save(envoi);
+    evenements.publishEvent(
+        new EnvoiDocumentEvent(
+            saved.getId(),
+            employe.id(),
+            typeDocument.name(),
+            employe.prenom() + " " + employe.nom()));
+    return saved;
   }
 
   private void envoyerEmailViaWebhook(String to, String subject, String message) {
@@ -177,7 +315,7 @@ class DocumentRhService {
           .retrieve()
           .toBodilessEntity();
     } catch (Exception e) {
-      throw new IllegalStateException(
+      throw new EnvoiWebhookEchoueException(
           "Échec de l'envoi du document via le webhook n8n : " + e.getMessage(), e);
     }
   }

@@ -10,4 +10,6 @@ public record OffreEmploiRequete(
     @NotBlank @Size(max = 200) String intitule,
     String description,
     @NotNull UUID departementId,
-    List<String> motsClesRequis) {}
+    List<String> motsClesRequis,
+    // EF-REC-14 : vivier/famille de poste, optionnel — liste métier ouverte (cf. OffreEmploi).
+    String categorie) {}

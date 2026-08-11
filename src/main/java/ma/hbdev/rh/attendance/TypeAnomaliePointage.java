@@ -5,5 +5,5 @@ enum TypeAnomaliePointage {
   retard,
   depart_anticipe,
   absence_checkout,
-  presence_incomplete
+  absence_totale
 }

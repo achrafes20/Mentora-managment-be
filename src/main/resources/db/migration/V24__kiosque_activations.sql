@@ -1,5 +1,5 @@
 -- =====================================================================
---  V15__kiosque_activations.sql
+--  V24__kiosque_activations.sql
 --  NFR-UX-02 : remplace le permitAll() inconditionnel de /api/kiosque/** par un jeton
 --  d'activation par appareil. Une ligne = un code généré par l'Admin (ou un délégué actif) ;
 --  la même ligne devient l'enregistrement d'activation permanent de l'appareil une fois le code

@@ -1,5 +1,6 @@
 package ma.hbdev.rh.document;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -10,6 +11,7 @@ import ma.hbdev.rh.employee.EmployeService;
 import ma.hbdev.rh.shared.file.FileStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.RestClient;
 
 class DocumentRhServiceTest {
@@ -19,6 +21,8 @@ class DocumentRhServiceTest {
   private CertificatGenerator certificatGenerator;
   private FileStorageService fileStorageService;
   private NotificationPlanifieeRepository notificationPlanifieeRepository;
+  private RestClient.ResponseSpec responseSpec;
+  private ApplicationEventPublisher evenements;
   private DocumentRhService service;
 
   @BeforeEach
@@ -28,23 +32,24 @@ class DocumentRhServiceTest {
     certificatGenerator = mock(CertificatGenerator.class);
     fileStorageService = mock(FileStorageService.class);
     notificationPlanifieeRepository = mock(NotificationPlanifieeRepository.class);
+    evenements = mock(ApplicationEventPublisher.class);
 
     RestClient.Builder builder = mock(RestClient.Builder.class);
     RestClient restClient = mock(RestClient.class);
-    RestClient.RequestBodyUriSpec requestBodyUriSpec = mock(RestClient.RequestBodyUriSpec.class);
-    RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+    // RETURNS_SELF plutôt que des matchers un par un (uri(anyString()), body(any())...) : l'API
+    // fluide de RestClient a plusieurs surcharges de body() (Object, StreamingHttpOutputMessage),
+    // et un matcher any() imprécis peut résoudre vers la mauvaise surcharge côté compilateur —
+    // silencieusement raté (le maillon suivant de la chaîne redevient null, et seul un test qui
+    // vérifie le chemin de succès s'en aperçoit — celui qui ne teste que l'échec ne le voit jamais
+    // puisque n'importe quelle exception, y compris un NPE de chaînage cassé, le fait "réussir").
+    RestClient.RequestBodyUriSpec requestBodyUriSpec =
+        mock(RestClient.RequestBodyUriSpec.class, org.mockito.Answers.RETURNS_SELF);
+    responseSpec = mock(RestClient.ResponseSpec.class);
 
     when(builder.requestFactory(org.mockito.ArgumentMatchers.any())).thenReturn(builder);
     when(builder.build()).thenReturn(restClient);
     when(restClient.post()).thenReturn(requestBodyUriSpec);
-    when(requestBodyUriSpec.uri(org.mockito.ArgumentMatchers.anyString()))
-        .thenReturn(requestBodyUriSpec);
-    when(requestBodyUriSpec.contentType(org.mockito.ArgumentMatchers.any()))
-        .thenReturn(requestBodyUriSpec);
-    when(requestBodyUriSpec.body(org.mockito.ArgumentMatchers.any()))
-        .thenReturn(requestBodyUriSpec);
     when(requestBodyUriSpec.retrieve()).thenReturn(responseSpec);
-    when(responseSpec.toBodilessEntity()).thenThrow(new RuntimeException("boom"));
 
     service =
         new DocumentRhService(
@@ -55,21 +60,11 @@ class DocumentRhServiceTest {
             builder,
             "http://localhost:5678",
             "http://localhost:8080",
-            notificationPlanifieeRepository);
+            notificationPlanifieeRepository,
+            evenements);
   }
 
-  @Test
-  void renvoyerDepuisSurveillance_shouldThrowWhenWebhookFails() {
-    UUID notifId = UUID.randomUUID();
-    UUID employeId = UUID.randomUUID();
-    UUID envoyeurId = UUID.randomUUID();
-
-    NotificationPlanifiee notif =
-        new NotificationPlanifiee(
-            employeId, TypeFinSurveillee.fin_stage, java.time.LocalDate.now());
-    notif.marquerEnvoyee();
-
-    when(notificationPlanifieeRepository.findById(notifId)).thenReturn(Optional.of(notif));
+  private void stubEmployeEtCertificatStage(UUID employeId) {
     when(employeService.recuperer(employeId))
         .thenReturn(
             new ma.hbdev.rh.employee.EmployeReponse(
@@ -92,13 +87,24 @@ class DocumentRhServiceTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null));
     when(certificatGenerator.genererCertificatStage(
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any(),
-            org.mockito.ArgumentMatchers.anyString()))
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any()))
         .thenReturn(new byte[] {1, 2, 3});
     when(fileStorageService.televerser(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
@@ -107,8 +113,42 @@ class DocumentRhServiceTest {
                 UUID.randomUUID(), "file.pdf", "application/pdf", 3));
     when(envoiDocumentRepository.save(org.mockito.ArgumentMatchers.any()))
         .thenAnswer(invocation -> invocation.getArgument(0));
+  }
+
+  @Test
+  void renvoyerDepuisSurveillance_shouldThrowWhenWebhookFails() {
+    UUID notifId = UUID.randomUUID();
+    UUID employeId = UUID.randomUUID();
+    UUID envoyeurId = UUID.randomUUID();
+
+    NotificationPlanifiee notif =
+        new NotificationPlanifiee(
+            employeId, TypeFinSurveillee.fin_stage, java.time.LocalDate.now());
+    notif.marquerEnvoyee();
+
+    when(notificationPlanifieeRepository.findById(notifId)).thenReturn(Optional.of(notif));
+    stubEmployeEtCertificatStage(employeId);
+    when(responseSpec.toBodilessEntity()).thenThrow(new RuntimeException("boom"));
 
     assertThrows(
-        IllegalStateException.class, () -> service.renvoyerDepuisSurveillance(notifId, envoyeurId));
+        EnvoiWebhookEchoueException.class,
+        () -> service.renvoyerDepuisSurveillance(notifId, envoyeurId));
+  }
+
+  @Test
+  void renvoyerDepuisSurveillance_shouldSucceedWhenWebhookOk() {
+    UUID notifId = UUID.randomUUID();
+    UUID employeId = UUID.randomUUID();
+    UUID envoyeurId = UUID.randomUUID();
+
+    NotificationPlanifiee notif =
+        new NotificationPlanifiee(
+            employeId, TypeFinSurveillee.fin_stage, java.time.LocalDate.now());
+
+    when(notificationPlanifieeRepository.findById(notifId)).thenReturn(Optional.of(notif));
+    stubEmployeEtCertificatStage(employeId);
+    when(responseSpec.toBodilessEntity()).thenReturn(null);
+
+    assertDoesNotThrow(() -> service.renvoyerDepuisSurveillance(notifId, envoyeurId));
   }
 }

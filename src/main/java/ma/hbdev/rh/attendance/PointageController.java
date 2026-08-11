@@ -2,11 +2,13 @@ package ma.hbdev.rh.attendance;
 
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.export.FormatExport;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import ma.hbdev.rh.shared.web.PagedResponse;
 import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,8 +39,14 @@ public class PointageController {
 
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-  public ApiResponse<PagedResponse<PointageReponse>> lister(Pageable pageable) {
-    var page = pointageService.lister(pageable);
+  public ApiResponse<PagedResponse<PointageReponse>> lister(
+      @RequestParam(required = false) UUID employeId,
+      @RequestParam(required = false) TypeScanPointage typeScan,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+          LocalDate debut,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fin,
+      Pageable pageable) {
+    var page = pointageService.lister(employeId, typeScan, debut, fin, pageable);
     return ApiResponse.ok(PagedResponse.of(page.map(PointageReponse::depuis)));
   }
 
@@ -48,6 +56,23 @@ public class PointageController {
       @PathVariable UUID employeId, Pageable pageable) {
     var page = pointageService.listerParEmploye(employeId, pageable);
     return ApiResponse.ok(PagedResponse.of(page.map(PointageReponse::depuis)));
+  }
+
+  /**
+   * EF-ATT-15 : présence du jour même, un statut par employé du périmètre — distinct du tableau de
+   * bord ci-dessous, qui agrège l'historique sur 30 jours passés.
+   */
+  @GetMapping("/aujourdhui")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  public ApiResponse<List<PresenceAujourdhuiReponse>> aujourdhui() {
+    return ApiResponse.ok(pointageService.aujourdhui());
+  }
+
+  /** Tableau de bord Présence : taux de couverture, anomalies récurrentes, répartition par type. */
+  @GetMapping("/dashboard")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  public ApiResponse<PresenceDashboardReponse> tableauDeBord() {
+    return ApiResponse.ok(pointageService.tableauDeBord());
   }
 
   // EF-EXP-02 : chemin statique "/export" — pas de conflit avec "/employe/{employeId}" ni

@@ -1,5 +1,7 @@
 package ma.hbdev.rh.employee;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
@@ -10,9 +12,9 @@ import java.util.UUID;
  * passe par le transfert (EF-EMP-11).
  */
 public record EmployeRequete(
-    @NotNull @Size(max = 100) String nom,
-    @NotNull @Size(max = 100) String prenom,
-    String email,
+    @NotBlank @Size(max = 100) String nom,
+    @NotBlank @Size(max = 100) String prenom,
+    @Email String email,
     String telephone,
     String poste,
     @NotNull UUID departementId,
@@ -30,4 +32,14 @@ public record EmployeRequete(
     // quel comme document employé (EF-EMP-03) à la création, pas de reupload. Le frontend le lit
     // depuis CandidatureReponse.cvFichierId ; le module employé ne connaît jamais la table
     // `candidatures`, seulement l'UUID d'un fichier déjà stocké (ai-instructions.md règle 4).
-    UUID cvFichierId) {}
+    UUID cvFichierId,
+    SexeEmploye sexe,
+    String cin,
+    // Optionnel, sans objet hors STAGIAIRE/STAGIAIRE_REMUNERE (cf. Employe#sujetStage).
+    String sujetStage,
+    // EF-EMP-14 : conformité RH Maroc — tous optionnels (non connus/applicables à la création).
+    String numeroCnss,
+    String numeroAmo,
+    String numeroCimr,
+    String rib,
+    LocalDate periodeEssaiFinLe) {}

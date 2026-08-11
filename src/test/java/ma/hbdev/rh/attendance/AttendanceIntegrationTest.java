@@ -1,6 +1,8 @@
 package ma.hbdev.rh.attendance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -407,7 +409,15 @@ class AttendanceIntegrationTest {
     }
     LocalDate mercredi = lundi.plusDays(2);
     LocalDate jeudi = lundi.plusDays(3);
+    LocalDate vendredi = lundi.plusDays(4);
     ZoneId zone = ZoneId.of("Africa/Casablanca");
+
+    // Vendredi : jour férié déclaré (EF-ATT-04/EF-EXP-02), sans scan ni planning -> exclu de
+    // l'export au même titre qu'un week-end, pas compté comme "Absence".
+    jdbcTemplate.update(
+        "insert into jours_feries(id, date_ferie, libelle) values (gen_random_uuid(), ?, ?)",
+        vendredi,
+        "Jour férié test");
 
     // Lundi : scan réel entrée/sortie -> "Présent". Mardi : couvert par un planning de
     // télétravail -> "Télétravail" malgré l'absence de scan. Mercredi : ni scan ni télétravail ->
@@ -462,7 +472,7 @@ class AttendanceIntegrationTest {
                     .param("format", "xlsx")
                     .param("employeId", employeId.toString())
                     .param("debut", lundi.toString())
-                    .param("fin", jeudi.toString()))
+                    .param("fin", vendredi.toString()))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -470,7 +480,8 @@ class AttendanceIntegrationTest {
 
     try (XSSFWorkbook classeur = new XSSFWorkbook(new ByteArrayInputStream(corps))) {
       var feuille = classeur.getSheetAt(0);
-      // En-tête + 4 jours (lundi/mardi/mercredi/jeudi, aucun dimanche dans la plage).
+      // En-tête + 4 jours (lundi/mardi/mercredi/jeudi) : vendredi est férié, donc exclu malgré
+      // qu'il soit dans la plage demandée — pas de 5e ligne.
       assertThat(feuille.getLastRowNum()).isEqualTo(4);
       assertThat(feuille.getRow(1).getCell(3).getStringCellValue()).isEqualTo("Présent");
       // 09h-17h = 8h, moins la pause midi d'1h déduite systématiquement (EF-ATT-03) = 7h00.
@@ -721,13 +732,16 @@ class AttendanceIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].id").value(planningId));
 
-    // Chaque employé "entre" hier sans "sortir" (absence_checkout si rien ne l'empêche) : seul le
-    // témoin (sans planning télétravail) doit finir par être signalé.
-    LocalDate hier = LocalDate.now(ZoneId.of("Africa/Casablanca")).minusDays(1);
+    // Chaque employé "entre" un jour ouvré donné sans "sortir" (absence_checkout si rien ne
+    // l'empêche) : seul le témoin (sans planning télétravail) doit finir par être signalé. Un
+    // lundi fixe dans le passé plutôt que "hier" (LocalDate.now() - 1) : le moteur exclut
+    // désormais explicitement les week-ends (EF-ATT-04), donc un test réellement exécuté un lundi
+    // aurait "hier" tombant un dimanche et ne détecterait jamais rien.
+    LocalDate hier = LocalDate.of(2024, 1, 8); // lundi
     insererPointageEntreeBackdated(employeTeletravail, hier);
     insererPointageEntreeBackdated(employeTemoin, hier);
 
-    anomalieService.detecterAnomaliesNocturnes();
+    anomalieService.detecterAnomaliesPourJournee(hier);
 
     Integer anomaliesTeletravail =
         jdbcTemplate.queryForObject(
@@ -772,6 +786,186 @@ class AttendanceIntegrationTest {
             delete("/api/employes/{id}/teletravail/{planningId}", employeTeletravail, planningId)
                 .header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isNotFound());
+  }
+
+  // EF-ATT-04 : un jour férié déclaré n'est pas un jour ouvré — un employé sans scan ce jour-là ne
+  // doit générer aucune anomalie, au même titre qu'un week-end.
+  @Test
+  void exclutLesJoursFeriesDeLaDetectionDAnomalies() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"08:30:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"17:00:00",
+                     "toleranceMinutes":10,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employe = creerEmployeAvecQrCode("Ferie", "ferie@hbdev.ma", "0600000007");
+
+    LocalDate ferie = LocalDate.of(2024, 1, 9); // mardi
+    jdbcTemplate.update(
+        "insert into jours_feries(id, date_ferie, libelle) values (gen_random_uuid(), ?, ?)",
+        ferie,
+        "Jour férié test");
+
+    // Entrée sans sortie : aurait généré une anomalie absence_checkout n'importe quel jour ouvré.
+    insererPointageEntreeBackdated(employe, ferie);
+
+    anomalieService.detecterAnomaliesPourJournee(ferie);
+
+    Integer anomalies =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ?",
+            Integer.class,
+            employe,
+            ferie);
+    assertThat(anomalies).isZero();
+  }
+
+  // Tableau de bord Présence : taux de couverture sur 30 jours + répartition des anomalies.
+  @Test
+  void afficheLeTableauDeBordPresence() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"08:30:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"17:00:00",
+                     "toleranceMinutes":10,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employeId = creerEmployeAvecQrCode("Dashboard", "dashboard@hbdev.ma", "0600000008");
+
+    // Jour ouvré récent garanti (dans la fenêtre glissante de 30 jours, jamais un week-end),
+    // indépendant du jour d'exécution réel du test.
+    LocalDate jourTest = LocalDate.now(ZoneId.of("Africa/Casablanca")).minusDays(1);
+    while (jourTest.getDayOfWeek() == DayOfWeek.SATURDAY
+        || jourTest.getDayOfWeek() == DayOfWeek.SUNDAY) {
+      jourTest = jourTest.minusDays(1);
+    }
+    ZoneId zone = ZoneId.of("Africa/Casablanca");
+    UUID qrCodeId =
+        jdbcTemplate.queryForObject(
+            "select id from qr_codes where employe_id = ? and actif = true", UUID.class, employeId);
+    jdbcTemplate.update(
+        "insert into pointages(employe_id, qr_code_id, type_scan, horodatage) values"
+            + " (?, ?, cast('entree' as type_scan_pointage), ?)",
+        employeId,
+        qrCodeId,
+        Timestamp.from(jourTest.atTime(8, 45).atZone(zone).toInstant()));
+    jdbcTemplate.update(
+        "insert into pointages(employe_id, qr_code_id, type_scan, horodatage) values"
+            + " (?, ?, cast('sortie' as type_scan_pointage), ?)",
+        employeId,
+        qrCodeId,
+        Timestamp.from(jourTest.atTime(17, 0).atZone(zone).toInstant()));
+
+    pointageService.enregistrerAnomalieIdempotent(
+        employeId, jourTest, TypeAnomaliePointage.retard, null, null);
+
+    mockMvc
+        .perform(get("/api/pointages/dashboard").header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.joursOuvresPeriode").value(org.hamcrest.Matchers.greaterThan(0)))
+        .andExpect(
+            jsonPath("$.data.tauxPresence30Jours").value(org.hamcrest.Matchers.greaterThan(0.0)))
+        .andExpect(
+            jsonPath("$.data.repartitionParType[?(@.type == 'retard')].nombre")
+                .value(
+                    org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.greaterThanOrEqualTo(1))));
+  }
+
+  // Régression : détection "retard"/"départ anticipé" en temps réel
+  // (PointageService#detecterAnomalieImmediate, appelée depuis un vrai scan kiosque) ne
+  // consultait pas le planning télétravail — seul AnomalieService#analyserJourPourEmploye (job
+  // nocturne, couvert ci-dessus par gereLePlanningTeletravailEtCourtCircuiteLaDetectionDAnomalies)
+  // le faisait. Un employé en télétravail qui scanne quand même (dépose un dossier au bureau,
+  // scénario hybride courant chez HB) se faisait donc marquer en retard à tort.
+  @Test
+  void scanTardifEnTeletravailNeCreePasDAnomalieImmediateMaisUnTemoinSansPlanningOui()
+      throws Exception {
+    // heureDebutMatin=00:00 + tolérance 0 : n'importe quelle heure réelle d'exécution du test est
+    // "après la limite d'arrivée", pour ne pas dépendre de l'heure du poste qui lance la suite.
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"00:00:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"23:59:00",
+                     "toleranceMinutes":0,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employeTeletravail =
+        creerEmployeAvecQrCode(
+            "TeletravailImmediat", "teletravail.immediat@hbdev.ma", "0600000007");
+    UUID employeTemoin =
+        creerEmployeAvecQrCode("TemoinImmediat", "temoin.immediat@hbdev.ma", "0600000008");
+
+    // Planning couvrant tous les jours (comme le test nocturne ci-dessus) pour ne pas dépendre du
+    // jour d'exécution réel.
+    mockMvc
+        .perform(
+            post("/api/employes/{id}/teletravail", employeTeletravail)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"dateDebut":"2020-01-01","dateFin":null,
+                     "jours":["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"]}
+                    """))
+        .andExpect(status().isCreated());
+
+    scannerEntree(employeTeletravail);
+    scannerEntree(employeTemoin);
+
+    LocalDate aujourdHui = LocalDate.now(ZoneId.of("Africa/Casablanca"));
+    Integer anomaliesTeletravail =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ?",
+            Integer.class,
+            employeTeletravail,
+            aujourdHui);
+    assertThat(anomaliesTeletravail).isZero();
+
+    Integer anomaliesTemoin =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ? "
+                + "and type_anomalie = 'retard'",
+            Integer.class,
+            employeTemoin,
+            aujourdHui);
+    assertThat(anomaliesTemoin).isEqualTo(1);
+  }
+
+  private void scannerEntree(UUID employeId) throws Exception {
+    String valeurQr =
+        jdbcTemplate.queryForObject(
+            "select valeur from qr_codes where employe_id = ? and actif = true",
+            String.class,
+            employeId);
+    String scanReq =
+        objectMapper.writeValueAsString(new ScanRequete(valeurQr, TypeScanPointage.entree));
+    mockMvc
+        .perform(
+            post("/api/kiosque/scan")
+                .header("X-Kiosque-Device-Token", deviceToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(scanReq))
+        .andExpect(status().isOk());
   }
 
   // NFR-UX-02 : jeton d'activation par appareil — remplace le permitAll() inconditionnel du
@@ -920,6 +1114,44 @@ class AttendanceIntegrationTest {
         .andExpect(jsonPath("$.error").value("Ce code a déjà été utilisé."));
   }
 
+  // NFR-UX-02 : un code généré mais jamais saisi expire après 24h (app.security.kiosque
+  // .expiration-code-heures) — message distinct d'un code invalide ou déjà utilisé, et sans
+  // pénaliser le compteur d'échecs (ce n'est pas une tentative de devinette).
+  @Test
+  void refuseUnCodeDActivationExpireAvecUnMessageDistinct() throws Exception {
+    String resGenerer =
+        mockMvc
+            .perform(
+                post("/api/kiosque/activations").header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String code = objectMapper.readTree(resGenerer).at("/data/code").asText();
+    String activationId = objectMapper.readTree(resGenerer).at("/data/id").asText();
+
+    // Le scan réel horodate toujours Instant.now() (emis_le est insertable=false côté JPA) —
+    // recul direct en base, même principe que insererPointageEntreeBackdated ci-dessous.
+    jdbcTemplate.update(
+        "update kiosque_activations set emis_le = now() - interval '25 hours' where id = ?",
+        UUID.fromString(activationId));
+
+    mockMvc
+        .perform(
+            post("/api/kiosque/activation/verifier")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CodeActivationRequete(code))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error").value("Ce code a expiré, veuillez en générer un nouveau."));
+
+    Integer tentatives =
+        jdbcTemplate.queryForObject(
+            "select tentatives_echouees_consecutives from kiosque_activations where id = ?",
+            Integer.class,
+            UUID.fromString(activationId));
+    assertThat(tentatives).isZero();
+  }
+
   // Les scans réels horodatent toujours Instant.now() (kiosque) : impossible de simuler "hier" par
   // ce chemin. Insertion directe, même principe que la donnée de démo attendance déjà validée en
   // conditions réelles pour ce projet.
@@ -937,5 +1169,168 @@ class AttendanceIntegrationTest {
         qrCodeId,
         Timestamp.from(jour.atTime(8, 30).atZone(ZoneId.of("Africa/Casablanca")).toInstant()),
         horaireId);
+  }
+
+  private UUID creerEmployeAvecManager(String nom, String email, String telephone, UUID managerId)
+      throws Exception {
+    String reqDept = "{\"nom\":\"RH %s\",\"managerId\":null}".formatted(nom);
+    String resDept =
+        mockMvc
+            .perform(
+                post("/api/departements")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqDept))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String deptId = objectMapper.readTree(resDept).at("/data/id").asText();
+
+    String reqEmp =
+        """
+        {"nom":"%s","prenom":"Employe","email":"%s","telephone":"%s","poste":"Dev",
+         "departementId":"%s","managerId":%s,"dateEmbauche":"2025-01-01","typeContrat":"CDI"}
+        """
+            .formatted(
+                nom,
+                email,
+                telephone,
+                deptId,
+                managerId == null ? "null" : "\"" + managerId + "\"");
+    String resEmp =
+        mockMvc
+            .perform(
+                post("/api/employes")
+                    .header("Authorization", "Bearer " + adminToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(reqEmp))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID employeId = UUID.fromString(objectMapper.readTree(resEmp).at("/data/id").asText());
+
+    mockMvc
+        .perform(
+            post("/api/pointages/qr-code/generer/" + employeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk());
+
+    return employeId;
+  }
+
+  // EF-AUTH-03 : /api/pointages et /api/anomalies ne scopaient pas au périmètre Manager,
+  // contrairement à l'export qui le faisait déjà — un Manager voyait toute l'entreprise.
+  @Test
+  void limiteLesPointagesEtAnomaliesAuPerimetreDuManager() throws Exception {
+    // insererPointageEntreeBackdated exige un horaire de référence en base (horaire_reference_id).
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"08:30:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"17:00:00",
+                     "toleranceMinutes":10,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID managerId = userRepository.findByEmail("manager@hbdev.ma").orElseThrow().getId();
+    UUID employeEquipe =
+        creerEmployeAvecManager("DansEquipe", "dansequipe@hbdev.ma", "0600000010", managerId);
+    UUID employeHorsEquipe =
+        creerEmployeAvecManager("HorsEquipe", "horsequipe@hbdev.ma", "0600000011", null);
+
+    pointageService.enregistrerAnomalieIdempotent(
+        employeEquipe, LocalDate.now(), TypeAnomaliePointage.retard, null, null);
+    pointageService.enregistrerAnomalieIdempotent(
+        employeHorsEquipe, LocalDate.now(), TypeAnomaliePointage.retard, null, null);
+    insererPointageEntreeBackdated(employeEquipe, LocalDate.now());
+    insererPointageEntreeBackdated(employeHorsEquipe, LocalDate.now());
+
+    mockMvc
+        .perform(get("/api/pointages").header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[*].employeId").value(hasItem(employeEquipe.toString())))
+        .andExpect(
+            jsonPath("$.data.content[*].employeId")
+                .value(not(hasItem(employeHorsEquipe.toString()))));
+
+    mockMvc
+        .perform(get("/api/anomalies").header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[*].employeId").value(hasItem(employeEquipe.toString())))
+        .andExpect(
+            jsonPath("$.data.content[*].employeId")
+                .value(not(hasItem(employeHorsEquipe.toString()))));
+
+    // Un Manager qui cible explicitement un employé hors de son équipe reste refusé.
+    mockMvc
+        .perform(
+            get("/api/pointages")
+                .param("employeId", employeHorsEquipe.toString())
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isForbidden());
+
+    // L'Admin, lui, voit tout, sans restriction.
+    mockMvc
+        .perform(get("/api/pointages").header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[*].employeId").value(hasItem(employeEquipe.toString())))
+        .andExpect(
+            jsonPath("$.data.content[*].employeId").value(hasItem(employeHorsEquipe.toString())));
+  }
+
+  // EF-ATT-04 : absence totale — un employé actif, jour ouvré, sans aucun pointage, ni en
+  // télétravail ni en congé approuvé, doit déclencher une anomalie (contrairement à l'ex-
+  // "presence_incomplete", jamais générée en pratique).
+  @Test
+  void detecteUneAbsenceTotalePourUnEmployeSansAucunPointage() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/horaires-reference")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"heureDebutMatin":"08:30:00","heureFinMatin":"13:00:00",
+                     "heureDebutApresMidi":"14:00:00","heureFinApresMidi":"17:00:00",
+                     "toleranceMinutes":10,"dateEffet":"2020-01-01"}
+                    """))
+        .andExpect(status().isCreated());
+
+    UUID employeAbsent = creerEmployeAvecQrCode("Absent", "absent@hbdev.ma", "0600000012");
+    UUID employeEnConge = creerEmployeAvecQrCode("EnConge", "enconge@hbdev.ma", "0600000013");
+
+    // Vendredi (jour ouvré), après la dateEmbauche (2025-01-01) fixée par creerEmployeAvecQrCode
+    // — un jour antérieur exclurait l'employé du filtre "date_embauche <= jour".
+    LocalDate jour = LocalDate.of(2025, 1, 10);
+    jdbcTemplate.update(
+        "insert into demandes_administratives"
+            + " (id, employe_id, type_demande, granularite, date_debut, date_fin, statut, cree_le)"
+            + " values (gen_random_uuid(), ?, 'conge', 'journee', ?, ?, 'approuvee', now())",
+        employeEnConge,
+        jour,
+        jour);
+
+    anomalieService.detecterAnomaliesPourJournee(jour);
+
+    Integer anomaliesAbsent =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ? "
+                + "and type_anomalie = 'absence_totale'",
+            Integer.class,
+            employeAbsent,
+            jour);
+    assertThat(anomaliesAbsent).isEqualTo(1);
+
+    Integer anomaliesEnConge =
+        jdbcTemplate.queryForObject(
+            "select count(*) from anomalies_pointage where employe_id = ? and date_pointage = ?",
+            Integer.class,
+            employeEnConge,
+            jour);
+    assertThat(anomaliesEnConge).isZero();
   }
 }

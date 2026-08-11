@@ -68,6 +68,7 @@ services:
       NOTIFICATIONS_ARCHIVAGE_CRON: ${NOTIFICATIONS_ARCHIVAGE_CRON:-0 15 2 * * *}
       DELEGATIONS_EXPIRATION_CRON: ${DELEGATIONS_EXPIRATION_CRON:-0 30 2 * * *}
       DOCUMENTS_SURVEILLANCE_CRON: ${DOCUMENTS_SURVEILLANCE_CRON:-0 0 3 * * *}
+      RECRUITMENT_ARCHIVAGE_CRON: ${RECRUITMENT_ARCHIVAGE_CRON:-0 30 3 * * *}
       # Origine du service n8n vue depuis le backend (réseau Docker). Distincte de la
       # N8N_WEBHOOK_URL du service n8n ci-dessous, qui est son URL publique à lui.
       N8N_BASE_URL: ${N8N_BASE_URL:-http://n8n:5678}

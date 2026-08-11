@@ -1,9 +1,11 @@
 package ma.hbdev.rh.attendance;
 
+import java.time.LocalDate;
 import java.util.UUID;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import ma.hbdev.rh.shared.web.PagedResponse;
 import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,8 +31,14 @@ public class AnomalieController {
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<PagedResponse<AnomaliePointageReponse>> lister(
-      @RequestParam(required = false) Boolean resolue, Pageable pageable) {
-    var page = anomalieService.lister(resolue, pageable);
+      @RequestParam(required = false) UUID employeId,
+      @RequestParam(required = false) TypeAnomaliePointage type,
+      @RequestParam(required = false) Boolean resolue,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+          LocalDate debut,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fin,
+      Pageable pageable) {
+    var page = anomalieService.lister(employeId, type, resolue, debut, fin, pageable);
     return ApiResponse.ok(PagedResponse.of(page.map(AnomaliePointageReponse::depuis)));
   }
 

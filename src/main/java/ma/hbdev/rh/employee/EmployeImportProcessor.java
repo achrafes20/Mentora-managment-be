@@ -126,6 +126,16 @@ class EmployeImportProcessor {
                           // l'assistant d'import (T2.B1) — hors périmètre de ce correctif.
                           null,
                           null,
+                          null,
+                          // Sexe/CIN/sujet de stage/conformité RH Maroc : idem, pas encore des
+                          // champs mappés par l'assistant d'import.
+                          null,
+                          null,
+                          null,
+                          null,
+                          null,
+                          null,
+                          null,
                           null))
                   .getId();
         }
@@ -153,6 +163,14 @@ class EmployeImportProcessor {
                 dateEmbauche,
                 typeContrat,
                 dateFinContratPrevue,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null));
         if (!existant.getDepartement().getId().equals(departement.getId())) {
           employeService.transferer(

@@ -92,6 +92,7 @@ Le système couvre neuf modules métier, articulés autour d'un cycle de vie emp
 - **EF-EMP-14** *(nouveau)* : Le système doit permettre à l'Admin RH de générer les cartes employé (cf. EF-EMP-09) en lot pour un groupe d'employés sélectionnés (ex. tous les employés sans carte, ou un import récent via EF-EMP-07), produisant un fichier PDF unique regroupant l'ensemble des cartes imprimables au format 85×54mm, prêt à découper.
 - **EF-EMP-15** *(nouveau — suivi CDD)* : Le système doit permettre de renseigner, pour tout employé de type CDD, une **date de fin de contrat prévue** (champ optionnel — un CDD sans terme connu à la création reste possible, à compléter ultérieurement). Ce champ est absent/non applicable pour les types CDI, Stagiaire et Stagiaire rémunéré.
 - **EF-EMP-16** *(nouveau)* : La date de fin de contrat prévue (EF-EMP-15) est distincte de la **date de départ effective** saisie à la désactivation (cf. EF-DOC-08) — un CDD peut être renouvelé (date repoussée), rompu de manière anticipée, ou requalifié en CDI (date supprimée) avant son terme initial. Ces deux dates coexistent dans la fiche employé et ne sont jamais confondues.
+- **EF-EMP-17** *(nouveau — 2026-08-06)* : Le système doit permettre à l'Admin RH de renseigner sur la fiche employé les identifiants de conformité RH marocaine — **numéro CNSS, numéro AMO, numéro CIMR, RIB, date de fin de période d'essai**, ainsi que le **salaire brut mensuel** (donnée sensible, réservée à l'Admin, éditée séparément du reste de la fiche). Tous ces champs sont optionnels (non connus/applicables selon le profil, ex. stagiaire non rémunéré sans CNSS). Le salaire brut mensuel est un pré-requis pour l'attestation de salaire (cf. EF-DOC-17) et pour l'export mensuel de paie (cf. EF-EXP-05).
 
 ### 2.4 Présence (EF-ATT)
 
@@ -110,6 +111,11 @@ Le système couvre neuf modules métier, articulés autour d'un cycle de vie emp
 - **EF-ATT-09** *(nouveau)* : La détection d'anomalies de pointage (cf. EF-ATT-04) doit consulter le planning de télétravail avant de conclure : aucune anomalie n'est générée pour un jour couvert par un planning de télétravail actif, l'absence de pointage étant dans ce cas le comportement attendu.
 - **EF-ATT-10** *(nouveau)* : Le planning de télétravail doit être consultable depuis la fiche employé. Les jours télétravaillés doivent être distingués des absences dans l'historique de présence (cf. EF-ATT-05) et dans les exports de feuilles de présence (cf. EF-EXP).
 - **EF-ATT-11** *(nouveau)* : Le système doit permettre à l'Admin RH de configurer un **seuil d'anomalies de pointage non résolues** sur une période donnée (nombre d'anomalies, taille de la période en jours) au-delà duquel une notification d'alerte est déclenchée (canal in-app + Mattermost, même mécanisme que les autres notifications métier — cf. EF-NOTIF-01) à destination du Manager du département de l'employé concerné, sur le même principe que les notifications déjà prévues pour le recrutement et les demandes administratives (cf. EF-REC-08, EF-ADM-08 — destinataire unique, pas de diffusion élargie). Ce seuil s'ajoute à la détection d'anomalie individuelle déjà prévue (cf. EF-ATT-04) sans la remplacer — il s'agit d'une escalade sur récurrence, pas d'une nouvelle catégorie d'anomalie.
+- **EF-ATT-15** *(nouveau — 2026-08-06)* : Le système doit fournir une vue **"Présence aujourd'hui"** listant, pour la date du jour, le statut de présence de chaque employé (présent, absent, en retard, en congé, etc.), avec filtres (recherche par nom, filtre par statut) et navigation directe vers la fiche de l'employé depuis son nom.
+- **EF-ATT-16** *(nouveau — 2026-08-06)* : Le système doit permettre à un employé d'**appairer un appareil personnel** (son téléphone) au moyen d'un code d'activation à 4 chiffres, généré et envoyé automatiquement par e-mail à la création de son compte employé (cf. EF-EMP), afin de pouvoir pointer sans matériel dédié partagé.
+- **EF-ATT-17** *(nouveau — 2026-08-06)* : Le pointage depuis un appareil personnel appairé (cf. EF-ATT-16) doit exiger un **second facteur physique** : le scan d'un QR code affiché sur site (généré et imprimable par l'Admin RH), prouvant la présence physique de l'employé sur le lieu de travail au moment du pointage — l'appairage seul (identité) ne suffit pas.
+- **EF-ATT-18** *(nouveau — 2026-08-06)* : Le code d'activation d'appareil personnel doit être un **code à 4 chiffres**, non rattaché de façon permanente à un employé (réutilisable après révocation), régénérable à tout moment par l'Admin RH depuis la table des activations — la régénération invalide l'ancien code, en génère un nouveau et l'envoie automatiquement par e-mail à l'employé. Le code n'est jamais stocké ni ré-affichable en clair après sa génération (cf. NFR-SEC).
+- **EF-ATT-19** *(nouveau — 2026-08-06)* : Chaque e-mail de code d'activation doit contenir un **lien de révocation à usage unique** (jeton à usage unique, sans authentification requise), permettant à l'employé de révoquer lui-même son appareil perdu ou volé depuis n'importe quel autre appareil, sans intervention de l'Admin RH. Après révocation (par ce lien ou par l'Admin), l'employé doit recontacter l'Admin RH pour obtenir un nouveau code. La désactivation d'un employé (cf. EF-EMP) révoque automatiquement et silencieusement (sans e-mail) tout appareil appairé.
 
 ### 2.5 Recrutement (EF-REC)
 
@@ -127,6 +133,7 @@ Le système couvre neuf modules métier, articulés autour d'un cycle de vie emp
 - **EF-REC-12** *(nouveau)* : À la création d'une nouvelle offre, le système doit comparer ses mots-clés requis à ceux des candidatures en statut "En attente" (limitées à une fenêtre de rétention configurable, ex. 6 mois). Les candidatures dont le score de correspondance dépasse un seuil configurable passent en statut **"Suggestion de réactivation"**, visible par l'Admin RH avec les mots-clés communs affichés ; l'Admin valide manuellement la réintégration au pipeline (statut → "Reçu"). Les candidatures dépassant la fenêtre de rétention sans réactivation passent automatiquement en statut "Archivée" (pas de suppression physique, cf. NFR-DATA-01).
 - **EF-REC-13** : Lorsqu'un candidat atteint le statut "Embauché", le système doit déclencher la création de sa fiche employé (cf. EF-EMP-05).
 - **EF-REC-14** *(nouveau)* : Lorsqu'une candidature passe au statut "Rejeté", le système doit envoyer automatiquement un e-mail de notification au candidat, avec un corps de message standard (éditable par l'Admin avant envoi). L'envoi est journalisé (date, destinataire) de la même manière qu'un envoi de document RH (cf. EF-DOC-06).
+- **EF-REC-15** *(nouveau — 2026-08-06)* : Le système doit permettre de classer une offre d'emploi dans une **catégorie/vivier** (ex. "Stagiaires"), afin de faciliter le filtrage et la constitution d'un vivier de candidats par profil recherché.
 
 ### 2.6 Demandes Administratives (EF-ADM)
 
@@ -144,6 +151,8 @@ Module généralisé couvrant les congés (journée complète ou demi-journée),
 - **EF-ADM-10** *(nouveau)* : Le système doit maintenir un calendrier des jours fériés (Maroc), géré manuellement par l'Admin RH (ajout, modification, suppression d'une date fériée), utilisé dans le calcul du décompte des jours de congé consommés (un jour férié inclus dans une période de congé approuvée n'est pas décompté du solde). **Note de conception** : pas de dépendance à une API externe de jours fériés — la couverture du Maroc y est incomplète, et les fêtes du calendrier hégirien (Aïd al-Fitr, Aïd al-Adha, Achoura, Mouloud) sont mobiles et confirmées officiellement seulement quelques jours à l'avance ; leur saisie reste donc manuelle et sous contrôle de l'Admin RH. Les jours fériés civils à date fixe peuvent être pré-remplis à l'installation à titre de valeur par défaut, modifiable.
 - **EF-ADM-11** *(nouveau)* : Le système doit permettre à l'Admin RH de configurer le **taux d'acquisition mensuel de congés par type de contrat** (cf. EF-ADM-03), plutôt qu'une valeur unique fixée dans le code. Valeur par défaut à l'installation : 1,5 jour/mois pour CDI et CDD, 0 pour Stagiaire et Stagiaire rémunéré. Modifiable indépendamment par type de contrat ; toute modification s'applique au calcul du solde à la volée (pas de recalcul rétroactif des mouvements déjà enregistrés). Report d'une année sur l'autre et dates d'expiration du solde : hors périmètre, non couverts par cette exigence.
 - **EF-ADM-12** *(nouveau)* : Le système doit permettre à l'Admin RH de définir des **périodes de blocage des demandes de congé** (date de début, date de fin, libellé — ex. clôture de fin d'année, période de forte activité), sur le même principe de gestion que le calendrier des jours fériés (cf. EF-ADM-10). Toute nouvelle demande de congé dont la période chevauche une période de blocage active doit être refusée côté serveur, avec un message explicite (cf. NFR-UX-03) ; une demande déjà approuvée avant la création d'une période de blocage n'est pas remise en cause rétroactivement.
+- **EF-ADM-13** *(nouveau — 2026-08-06)* : Le système doit proposer, en plus du congé payé et du bon de sortie, des **congés légaux spéciaux** : mariage, naissance, décès, maladie. Contrairement au congé payé (EF-ADM-03), ces demandes ne consomment jamais le solde de congé de l'employé et ne sont pas soumises aux périodes de blocage (EF-ADM-12) — ce sont des droits légaux distincts, exceptionnels par nature.
+- **EF-ADM-14** *(nouveau — 2026-08-06)* : Une demande de congé maladie doit obligatoirement être accompagnée d'un **justificatif téléversé** (arrêt de travail) avant sa création, via un mécanisme de téléversement de fichier générique (formats autorisés : PDF, Word, JPEG, PNG), réutilisable pour d'autres pièces justificatives futures.
 
 ### 2.7 Documents RH (EF-DOC)
 
@@ -169,6 +178,7 @@ Ce module gère la génération automatique de documents RH à destination des e
 - **EF-DOC-14** *(nouveau)* : Contrairement à la notification de fin de stage (EF-DOC-02, non relancée), cette notification doit être **répétée une seconde fois à J-3** si aucune action de désactivation n'a été engagée sur la fiche employé entre-temps — le départ d'un CDI/CDD engageant des obligations légales plus lourdes qu'un stage justifie cette relance unique supplémentaire.
 - **EF-DOC-15** *(nouveau)* : Si la date de fin de contrat prévue est modifiée (renouvellement), supprimée (promotion CDI, cf. EF-DOC-16), ou si l'employé est désactivé avant l'échéance, toute notification planifiée et non encore envoyée doit être annulée ou recalculée — même principe que pour le stage (cf. §3.5).
 - **EF-DOC-16** *(nouveau — règle métier)* : Un changement de type de contrat CDD → CDI (cf. §1.1, ajustement manuel du solde de congés déjà prévu) doit automatiquement vider le champ date de fin de contrat prévue (EF-EMP-15) et annuler toute surveillance associée. Ce changement de type reste une action manuelle de l'Admin RH ; le système ne le déduit jamais automatiquement.
+- **EF-DOC-17** *(nouveau — 2026-08-06)* : Le système doit permettre de générer une **attestation de salaire** pour un employé, à partir du salaire brut mensuel renseigné sur sa fiche (cf. EF-EMP-17). Génération à la demande par l'Admin RH, même mécanisme de production/téléchargement de document que les autres attestations déjà prévues (cf. EF-DOC).
 
 ### 2.8 Export & Reporting (EF-EXP) *(nouveau)*
 
@@ -178,6 +188,7 @@ Module transverse permettant l'extraction des données consultées à l'écran v
 - **EF-EXP-02** *(nouveau)* : Le système doit permettre à l'Admin ou au Manager (limité à son périmètre) d'exporter l'historique de présence d'un employé ou d'une équipe sur une période donnée (feuille de présence mensuelle), au format Excel ou PDF.
 - **EF-EXP-03** *(nouveau)* : Le système doit permettre à l'Admin d'exporter l'historique des demandes administratives (filtré selon les critères de EF-ADM-06) au format Excel ou PDF.
 - **EF-EXP-04** *(nouveau)* : Chaque export doit être généré à la demande (pas de job planifié), et refléter les données au moment de la génération.
+- **EF-EXP-05** *(nouveau — 2026-08-06)* : Le système doit permettre d'exporter mensuellement les **données brutes de paie** (salaire brut, CNSS, AMO, CIMR, RIB — cf. EF-EMP-17) pour l'ensemble des employés. L'export ne réalise aucun calcul de cotisation ni d'impôt sur le revenu (hors périmètre) ; il ne fait que consolider les données déjà saisies, à charge pour le service comptable/paie externe de les exploiter.
 
 ### 2.9 Configuration & Paramétrage (EF-CFG) *(nouveau)*
 
@@ -297,17 +308,24 @@ Module transverse assurant, pour chaque notification métier déjà définie (EF
 - EF-EMP-10, 11 — CRUD département, transfert d'employé entre départements/managers
 - EF-EMP-12, 13 — recherche texte libre employés, notification Manager à l'embauche
 - EF-EMP-15, 16 — date de fin de contrat prévue pour les CDD, distinguée de la date de départ effective
+- EF-EMP-17 — conformité RH Maroc (CNSS, AMO, CIMR, RIB, fin de période d'essai) et salaire brut mensuel
 - EF-ATT-04, 05 — détection d'anomalies (retard, départ anticipé, incomplet), consultation d'historique
 - EF-ATT-08, 09, 10 — télétravail hybride : planning par employé, neutralisation des anomalies, distinction dans l'historique et les exports
 - EF-ATT-11 — seuil configurable d'anomalies non résolues avant notification d'alerte
+- EF-ATT-15 — vue "Présence aujourd'hui" avec filtres et navigation vers la fiche employé
+- EF-ATT-16, 17, 18, 19 — pointage mobile personnel : appairage par code à 4 chiffres, second facteur QR de site, régénération, révocation self-service par lien
 - EF-REC-03, 04, 05, 08, 09, 11, 12, 13, 14 — normalisation multi-source, analyse IA + mots-clés, dégradation gracieuse, réactivation "En attente", auto-création de fiche employé, notification de rejet candidat
+- EF-REC-15 — catégorie/vivier sur les offres d'emploi
 - EF-ADM-04, 06, 09, 10 — bons de sortie, historique filtrable, envoi de document libre, calendrier des jours fériés
 - EF-ADM-11, 12 — taux d'acquisition de congés configurable par type de contrat, périodes de blocage des demandes de congé
+- EF-ADM-13, 14 — congés légaux spéciaux (mariage, naissance, décès, maladie), justificatif obligatoire pour maladie
 - EF-DASH-05 — bandeau de délégation active sur le tableau de bord Admin
 - EF-DOC-01, 02, 03, 04, 05, 06 — flux complet Documents RH (sans relance automatique)
 - EF-DOC-08, 09, 10, 11 — workflow de départ CDI/CDD, certificat de travail
 - EF-DOC-12, 13, 14, 15, 16 — surveillance CDD, notification à J-15 + relance à J-3, annulation en cas de renouvellement ou promotion CDI
+- EF-DOC-17 — attestation de salaire
 - EF-EXP-01, 02, 03, 04 — export Excel/PDF des listes, présences et demandes
+- EF-EXP-05 — export mensuel des données brutes de paie
 - EF-CFG-01, 02 — identité de l'entreprise (utilisée sur les documents générés), audit des modifications
 - EF-CFG-03, 04, 05, 06 — consultation, filtrage, recherche et export du journal d'audit, en lecture seule
 - EF-NOTIF-01, 02, 03, 04, 05, 06 — centre de notifications in-app comme canal de repli garanti indépendant de Mattermost

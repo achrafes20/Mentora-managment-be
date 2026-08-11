@@ -36,6 +36,15 @@ class KiosqueActivationController {
     return ApiResponse.ok(CodeGenereReponse.depuis(activationService.genererCode()));
   }
 
+  // EF-ATT-16 : code lié à un employé précis — l'appareil qui l'active devient son téléphone
+  // personnel de pointage (voir KiosqueController#scannerPersonnel), pas un kiosque partagé.
+  @PostMapping("/personnel/{employeId}")
+  @ResponseStatus(HttpStatus.CREATED)
+  ApiResponse<CodeGenereReponse> genererCodePersonnel(@PathVariable UUID employeId) {
+    return ApiResponse.ok(
+        CodeGenereReponse.depuis(activationService.genererCodePersonnel(employeId)));
+  }
+
   @GetMapping
   ApiResponse<List<KiosqueActivationReponse>> lister() {
     return ApiResponse.ok(

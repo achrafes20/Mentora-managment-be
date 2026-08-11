@@ -221,6 +221,46 @@ class AuditIntegrationTest {
         .andExpect(jsonPath("$.data.content[0].action").value("recrutement.rejet"));
   }
 
+  // Régression bout en bout (contrairement aux tests ci-dessus, qui vérifient le mécanisme de
+  // recherche sur des lignes insérées à la main avec details déjà rempli) : AuthService/UserService
+  // ne publiaient jusqu'ici aucun EvenementMetier, donc aucune action de compte (création,
+  // verrouillage, réinitialisation de mot de passe...) n'apparaissait dans journal_audit — un vrai
+  // trou NFR-SEC-03. Ce test passe par une vraie création de compte via l'API, pas une insertion
+  // directe, pour vérifier que l'événement est réellement publié ET que details() est peuplé (sinon
+  // la recherche par nom/e-mail, EF-CFG-04, ne trouve jamais rien).
+  @Test
+  void creationDeCompteEstAuditeeEtTrouvableParRechercheTexteLibre() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/users")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"email":"nouveau.compte@hbdev.ma","motDePasse":"NouveauPass@2025",
+                     "role":"manager","nom":"Benali","prenom":"Yassir"}
+                    """))
+        .andExpect(status().isCreated());
+
+    mockMvc
+        .perform(
+            get("/api/audit")
+                .param("module", "authentification")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.content[0].action").value("creation"))
+        .andExpect(jsonPath("$.data.content[0].details.email").value("nouveau.compte@hbdev.ma"));
+
+    mockMvc
+        .perform(
+            get("/api/audit")
+                .param("recherche", "nouveau.compte@hbdev.ma")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
   @Test
   void refuseAuManager() throws Exception {
     mockMvc

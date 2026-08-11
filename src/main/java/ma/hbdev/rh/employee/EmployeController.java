@@ -35,7 +35,8 @@ import org.springframework.web.multipart.MultipartFile;
  * EF-EMP (fiche employé). RBAC réel (T1.C1) : consultation (liste/détail/documents/historique)
  * ouverte à Admin et Manager — le Manager est restreint côté service à son propre département
  * (EF-AUTH-03, cf. {@code EmployeService}) ; création/modification/transfert/désactivation/upload
- * de document réservés à l'Admin (EF-AUTH-03 : "aucun droit de modification" pour le Manager).
+ * de document réservés à l'Admin (EF-AUTH-03 : "aucun droit de modification" pour le Manager), à
+ * l'exception du sujet de stage (modifierSujetStage) ouvert au Manager de son département.
  */
 @RestController
 @RequestMapping("/api/employes")
@@ -86,6 +87,24 @@ public class EmployeController {
         .body(contenu);
   }
 
+  // EF-DOC-15 : export mensuel paie — Admin uniquement (données salariales), contrairement à
+  // l'export fiche employé ci-dessus ouvert au Manager.
+  @GetMapping("/export-paie")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ResponseEntity<byte[]> exporterPaie(
+      @RequestParam FormatExport format,
+      @RequestParam @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM")
+          java.time.YearMonth mois) {
+    byte[] contenu = employeService.exporterPaie(format, mois);
+    String nomFichier = "paie_" + mois + format.extension();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(format.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(nomFichier).build().toString())
+        .body(contenu);
+  }
+
   @GetMapping("/{id}")
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
   public ApiResponse<EmployeReponse> detail(@PathVariable UUID id) {
@@ -104,6 +123,28 @@ public class EmployeController {
   public ApiResponse<EmployeReponse> modifier(
       @PathVariable UUID id, @Valid @RequestBody EmployeModificationRequete requete) {
     return ApiResponse.ok(EmployeReponse.depuis(employeService.modifier(id, requete)));
+  }
+
+  // EF-EMP-01 : seule modification ouverte au Manager (dans son département, cf.
+  // EmployeService#verifierPerimetreManager) — contrairement à modifier() ci-dessus, réservé à
+  // l'Admin.
+  @PutMapping("/{id}/sujet-stage")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  public ApiResponse<EmployeReponse> modifierSujetStage(
+      @PathVariable UUID id, @RequestBody SujetStageRequete requete) {
+    return ApiResponse.ok(
+        EmployeReponse.depuis(employeService.modifierSujetStage(id, requete.sujetStage())));
+  }
+
+  // EF-DOC-14 : donnée sensible (salaire), Admin uniquement — contrairement au sujet de stage
+  // ci-dessus, jamais ouvert au Manager.
+  @PutMapping("/{id}/salaire")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<EmployeReponse> modifierSalaire(
+      @PathVariable UUID id, @RequestBody SalaireRequete requete) {
+    return ApiResponse.ok(
+        EmployeReponse.depuis(
+            employeService.modifierSalaireBrutMensuel(id, requete.salaireBrutMensuel())));
   }
 
   @PostMapping("/{id}/transferer")
@@ -129,6 +170,17 @@ public class EmployeController {
   public ApiResponse<Void> desactiver(
       @PathVariable UUID id, @Valid @RequestBody DesactivationRequete requete) {
     employeService.desactiver(id, requete);
+    return ApiResponse.ok();
+  }
+
+  // Déclenchement manuel du balayage de désactivation automatique (bouton "Forcer l'exécution"
+  // côté écran Documents), même principe que DocumentRhController#executerSurveillance — le
+  // balayage tourne normalement tout seul via DesactivationAutomatiqueScheduler, ce endpoint sert
+  // juste à ne pas attendre le prochain déclenchement (rattrapage, vérification en recette).
+  @PostMapping("/desactivation-automatique/executer")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ApiResponse<Void> executerDesactivationAutomatique() {
+    employeService.desactiverContratsExpires();
     return ApiResponse.ok();
   }
 

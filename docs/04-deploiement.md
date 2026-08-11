@@ -22,14 +22,14 @@ Deux dépôts, deux pipelines, deux images : `Mentora-managment-be` (pivot — b
 | Backend | `mentora-backend` | `eclipse-temurin:21-jdk-alpine` | `eclipse-temurin:21-jre-alpine` | non-root (`rh`) |
 | Frontend | `mentora-frontend` | `node:22-alpine` | `nginxinc/nginx-unprivileged:alpine` | non-root (`101`) |
 
-**Aucune image n'est publiée sur un registre à ce jour** — `release.yml` construit et scanne (Trivy) les deux images mais ne les pousse pas encore. **C'est le seul vrai blocage pour écrire vos manifests.** Cible convenue : GHCR, tag `sha-<court>`. 
+**Les deux images sont publiées sur GHCR** — `ghcr.io/mentora-ma/mentora-management-be` et `ghcr.io/mentora-ma/mentora-management-fe`, taguées `latest` et `sha-<court>`. Publication ajoutée aux deux `release.yml`, le push est gated par le scan Trivy (`exit-code: 1` sur `CRITICAL,HIGH` non corrigeable — le job échoue et s'arrête avant d'atteindre le push). Vos manifests peuvent référencer ces images dès maintenant.
 
 ---
 
 ## 3. Ports
 
 - **Backend** : écoute sur `8080`.
-- **Frontend** : écoute sur `8081` — pas `80` : `nginx-unprivileged` tourne en non-root et ne peut pas se lier à un port privilégié (< 1024).
+- **Frontend** : écoute sur `8081` — pas `80` : `nginx-unprivileged` tourne en non-root et ne peut pas se lier à un port privilégié.
 
 
 ---
@@ -43,32 +43,25 @@ Deux dépôts, deux pipelines, deux images : `Mentora-managment-be` (pivot — b
 
 Chemins publics, aucun autre endpoint Actuator exposé.
 
-```yaml
-livenessProbe:
-  httpGet: { path: /actuator/health/liveness, port: 8080 }
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  failureThreshold: 3
-readinessProbe:
-  httpGet: { path: /actuator/health/readiness, port: 8080 }
-  initialDelaySeconds: 15
-  periodSeconds: 5
-  failureThreshold: 3
-startupProbe:                       # requis : migrations Flyway au premier démarrage
-  httpGet: { path: /actuator/health/liveness, port: 8080 }
-  failureThreshold: 30
-  periodSeconds: 10
-```
-
 Frontend : `GET /` → `200` dès que nginx est prêt, suffit pour les deux probes.
 
 ---
 
 ## 5. Variables d'environnement
 
-### Backend
+Comment les secrets sont provisionnés selon l'environnement :
 
-`[SECRET]` → objet `Secret` Kubernetes, jamais un ConfigMap.
+| Environnement | Mécanisme |
+|---|---|
+| Dev | `.env` local, gitignoré |
+| CI | GitHub Actions secrets |
+| **Prod** | **À définir de votre côté** (Secrets K8s natifs, External Secrets, Sealed Secrets…) |
+
+`JWT_SECRET` et `N8N_ENCRYPTION_KEY` : jamais partagés entre environnements. Les valeurs par défaut d'`application.yml` sont publiques (dans Git) — tout `[SECRET]` non surchargé en prod tourne avec une valeur connue de quiconque a accès au dépôt.
+
+`[SECRET]` ci-dessous → objet `Secret` Kubernetes, jamais un ConfigMap.
+
+### Backend
 
 | Variable | Req. | Description |
 |---|---|---|
@@ -79,7 +72,7 @@ Frontend : `GET /` → `200` dès que nginx est prêt, suffit pour les deux prob
 | `SPRING_DATASOURCE_PASSWORD` | **[SECRET]** | |
 | `JWT_SECRET` | **[SECRET]** | Min. 64 caractères, propre à chaque environnement. |
 | `JWT_EXPIRATION_MS` | Non | Défaut `86400000` (24h). |
-| `APP_BASE_URL` | **Oui** | URL publique du frontend. Sert aux liens de réinitialisation de mot de passe. |
+| `APP_BASE_URL` | **Oui** | URL publique du frontend. Sert aux liens de réinitialisation de mot de passe et au lien de révocation d'appareil personnel envoyé dans l'e-mail de code de pointage mobile (EF-ATT-19). |
 | `API_BASE_URL` | **Oui** | URL publique de l'API. Sert aux liens de téléchargement de documents. En prod, identique à `APP_BASE_URL`. |
 | `CORS_ALLOWED_ORIGINS` | **Oui** | Origines autorisées, séparées par des virgules. |
 | `FILE_STORAGE_PATH` | **Oui** | Doit pointer sur un volume persistant (§7). Défaut `./data/uploads`. |
@@ -96,7 +89,8 @@ Frontend : `GET /` → `200` dès que nginx est prêt, suffit pour les deux prob
 | `NOTIFICATIONS_ARCHIVAGE_CRON` | Non | Défaut `0 15 2 * * *`. |
 | `NOTIFICATIONS_RETENTION_JOURS` | Non | Défaut `90`. |
 | `DELEGATIONS_EXPIRATION_CRON` | Non | Défaut `0 30 2 * * *`. |
-| `DOCUMENTS_SURVEILLANCE_CRON` | Non | Défaut `0 0 3 * * *`. Voir §8 (ne pas scaler avant d'avoir tranché). |
+| `DOCUMENTS_SURVEILLANCE_CRON` | Non | Défaut `0 0 3 * * *`. |
+| `RECRUITMENT_ARCHIVAGE_CRON` | Non | Défaut `0 30 3 * * *`. |
 
 ### Frontend
 
@@ -144,12 +138,12 @@ Jours fériés et horaires de référence ne sont pas préremplis — saisie man
 
 ## 7. Volumes
 
-| Composant | Volume | Dimensionnement |
-|---|---|---|
-| Backend | **PersistentVolumeClaim requis** | Fichiers uploadés sous `FILE_STORAGE_PATH`. 5–10 GiB au départ. |
-| Frontend | Aucun | |
-| PostgreSQL | PersistentVolumeClaim | 20 GiB au départ. |
-| n8n | PersistentVolumeClaim (petit) | ~1 GiB. |
+| Composant | Volume |
+|---|---|
+| Backend | **PersistentVolumeClaim requis** |
+| Frontend | Aucun |
+| PostgreSQL | PersistentVolumeClaim |
+| n8n | PersistentVolumeClaim (petit) |
 
 ⚠️ Les fichiers uploadés sont sur **disque**, pas en base (la table `fichiers` ne garde que le chemin). Sans volume persistant, ils disparaissent à chaque redémarrage de pod. **Si plusieurs réplicas backend (§8), ce volume doit être `ReadWriteMany`** — un fichier téléversé par un pod doit être lisible par les autres.
 
@@ -159,7 +153,9 @@ Le backend écrit aussi des logs sous `/app/logs`. Avec `readOnlyRootFilesystem:
 
 ## 8. Scaling — question ouverte
 
-Le backend exécute 4 tâches planifiées la nuit (anomalies de pointage 01h00, archivage notifications 02h15, expiration délégations 02h30, surveillance fins de contrat 03h00 — envoi d'e-mails). Elles sont internes à chaque pod : **avec plusieurs réplicas, chaque tâche s'exécute une fois par pod** (ex. 3 pods = le même e-mail envoyé 3 fois). Aucune coordination entre pods aujourd'hui.
+Le backend exécute **5** tâches planifiées la nuit.
+
+Elles sont internes à chaque pod : **avec plusieurs réplicas, chaque tâche s'exécute une fois par pod** (ex. 3 pods = le même e-mail envoyé 3 fois). Aucune coordination entre pods aujourd'hui.
 
 À 1 réplica, aucun problème — c'est le cas nominal.
 
@@ -174,41 +170,25 @@ Le reste scale sans souci : Flyway (verrou géré), JWT stateless (pas de sticky
 
 ## 9. n8n
 
-2 workflows versionnés dans `n8n/workflows/`, importés via `n8n import:workflow --separate --input=n8n/workflows/` — transport uniquement (webhook/IMAP), plus aucun cron (le dernier, l'archivage recrutement EF-REC-12, est passé en `@Scheduled` backend le 2026-08-03 — voir `n8n/README.md`) :
+2 workflows versionnés dans `n8n/workflows/`, importés via `n8n import:workflow --separate --input=n8n/workflows/` — transport uniquement (webhook/IMAP) :
 
 | Fichier | Rôle |
 |---|---|
 | `T3B1RecrutementImapIngest001.json` | IMAP → `POST /api/recruitment/ingest`. Protégé par `INTERNAL_WEBHOOK_SECRET` (en-tête `X-Internal-Webhook-Secret`). |
 | `ZljnpSfmg1POyS7P.json` | Webhook `/webhook/notify-email` → envoi SMTP (seul chemin de sortie des e-mails). |
 
+*(voir `n8n/README.md`)*
 - Les credentials (IMAP, SMTP) ne sont **pas** dans l'export — à recréer manuellement dans l'UI n8n au premier déploiement.
 - Les workflows importés sont **désactivés** — à activer manuellement (pas de réactivation auto à l'import).
 
 
 ---
 
-## 10. Secrets
+## 10. Points de vigilance pour l'équipe DevOps
 
-| Env. | Mécanisme |
-|---|---|
-| Dev | `.env` local, gitignoré |
-| CI | GitHub Actions secrets |
-| **Prod** | **À définir de votre côté** (Secrets K8s natifs, External Secrets, Sealed Secrets…) |
-
-Secrets à provisionner : `SPRING_DATASOURCE_PASSWORD`, `JWT_SECRET`, `INTERNAL_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MATTERMOST_BOT_TOKEN`, `POSTGRES_PASSWORD`, `N8N_ENCRYPTION_KEY`.
-
-- `JWT_SECRET` et `N8N_ENCRYPTION_KEY` : jamais partagés entre environnements.
-- Les valeurs par défaut d'`application.yml` sont publiques (dans Git) — tout `[SECRET]` non surchargé en prod tourne avec une valeur connue de quiconque a accès au dépôt.
-
----
-
-## 11. Points ouverts
-
-1. **Aucune image publiée** (§2) — bloquant pour vos manifests.
-2. **Mot de passe Admin de seed public** (§6) — à changer au premier déploiement.
-3. **Scaling backend** (§8) — en attente de votre réponse.
-4. Pas de SAST (Trivy couvre les CVE de dépendances, pas les patterns applicatifs).
-
-Décisions qui vous appartiennent : mécanisme de secrets prod, exécution des migrations (démarrage vs Job), protection de l'UI n8n, classe de stockage du volume backend, TLS/Ingress.
-
+1. Le mot de passe Admin de seed (`admin123`, §6) est public dans ce dépôt — à changer dès le premier déploiement.
+2. Les tâches planifiées du backend (§8) ne sont pas coordonnées entre plusieurs réplicas — un point à surveiller si vous scalez au-delà d'un seul pod.
+3. Les secrets de production (§5) ne sont pas gérés de notre côté — à mettre en place avant le déploiement.
+4. L'interface n8n (§9) n'est pas protégée dans notre configuration de dev — à sécuriser en production.
+5. Le TLS/Ingress reste à configurer selon vos standards habituels.
 

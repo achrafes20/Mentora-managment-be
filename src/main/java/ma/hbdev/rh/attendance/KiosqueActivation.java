@@ -32,11 +32,19 @@ class KiosqueActivation {
   @Column(name = "code_hash", nullable = false)
   private String codeHash;
 
-  @Column(name = "emis_par", nullable = false)
+  // Nullable (V33) : ON DELETE SET NULL si l'Admin qui a émis le code est supprimé — mieux que de
+  // bloquer cette suppression pour un simple attribut d'audit.
+  @Column(name = "emis_par")
   private UUID emisPar;
 
   @Column(name = "delegation_id")
   private UUID delegationId;
+
+  // EF-ATT-16 : appareil personnel (téléphone de l'employé) — null pour un kiosque partagé
+  // classique. Une fois ce champ renseigné, /api/kiosque/scan-personnel résout l'employé
+  // directement depuis le jeton d'appareil, sans lecture de QR (le téléphone EST l'identité).
+  @Column(name = "employe_id")
+  private UUID employeId;
 
   @Column(name = "emis_le", insertable = false, updatable = false)
   private Instant emisLe;
@@ -64,12 +72,23 @@ class KiosqueActivation {
   @Column(name = "verrouille_jusqu_a")
   private Instant verrouilleJusquA;
 
+  // EF-ATT-19 : jeton à usage unique inclus dans l'e-mail du code — permet à l'employé de
+  // révoquer lui-même un appareil personnel perdu, sans authentification. Effacé après usage
+  // (voir revoquer()) : un lien déjà cliqué ne fonctionne plus.
+  @Column(name = "jeton_revocation_hash")
+  private String jetonRevocationHash;
+
   protected KiosqueActivation() {}
 
   KiosqueActivation(String codeHash, UUID emisPar, UUID delegationId) {
     this.codeHash = codeHash;
     this.emisPar = emisPar;
     this.delegationId = delegationId;
+  }
+
+  KiosqueActivation(String codeHash, UUID emisPar, UUID delegationId, UUID employeId) {
+    this(codeHash, emisPar, delegationId);
+    this.employeId = employeId;
   }
 
   boolean isVerrouillee() {
@@ -95,11 +114,16 @@ class KiosqueActivation {
     this.verrouilleJusquA = null;
   }
 
+  void definirJetonRevocation(String jetonRevocationHash) {
+    this.jetonRevocationHash = jetonRevocationHash;
+  }
+
   /** Désactivation manuelle — pas d'expiration automatique pour l'instant (choix provisoire). */
   void revoquer(UUID revoqueePar) {
     this.statut = StatutActivationKiosque.revoquee;
     this.revoqueePar = revoqueePar;
     this.revoqueeLe = Instant.now();
     this.deviceTokenHash = null;
+    this.jetonRevocationHash = null;
   }
 }

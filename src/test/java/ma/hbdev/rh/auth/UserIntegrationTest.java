@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -41,6 +42,7 @@ class UserIntegrationTest {
   @Autowired private SessionRepository sessionRepository;
   @Autowired private PasswordEncoder passwordEncoder;
   @Autowired private ObjectMapper objectMapper;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private String adminToken;
   private String managerToken;
@@ -48,6 +50,9 @@ class UserIntegrationTest {
 
   @BeforeEach
   void setUp() throws Exception {
+    // journal_audit référence utilisateurs (NFR-SEC-03, comptes désormais audités) : à vider
+    // avant, sinon userRepository.deleteAll() ci-dessous viole la FK dès le 2e test.
+    jdbcTemplate.execute("TRUNCATE TABLE journal_audit");
     sessionRepository.deleteAll();
     userRepository.deleteAll();
 
@@ -100,11 +105,16 @@ class UserIntegrationTest {
         .andExpect(jsonPath("$.data.length()").value(2));
   }
 
+  // Régression : ApiAccessDeniedHandler (SecurityConfig) — /api/users/** est bloqué par
+  // requestMatchers(...).hasRole("ADMIN") au niveau de la chaîne de filtres (pas @PreAuthorize),
+  // qui avant retombait sur le comportement par défaut de Spring Security : 403 à corps vide.
   @Test
   void managerCannotListUsers() throws Exception {
     mockMvc
         .perform(get("/api/users").header("Authorization", "Bearer " + managerToken))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error").value("Accès refusé"));
   }
 
   @Test

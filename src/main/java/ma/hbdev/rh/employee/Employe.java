@@ -74,12 +74,47 @@ class Employe {
   @Column(name = "photo_fichier_id")
   private UUID photoFichierId;
 
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  @Column
+  private SexeEmploye sexe;
+
+  // Affichée sur l'attestation de travail (EF-DOC, document actif) — optionnelle, aucune reprise
+  // de données réelle par migration (V17).
+  @Column private String cin;
+
+  // EF-EMP-01 : optionnel, saisi à la création pour un STAGIAIRE/STAGIAIRE_REMUNERE. Sans objet
+  // pour les autres types de contrat.
+  @Column(name = "sujet_stage")
+  private String sujetStage;
+
   // EF-EMP-05/EF-REC-13 : renseigné uniquement quand la fiche est créée depuis une candidature
   // recrutement passée au statut "Embauché" — jamais de ligne créée automatiquement, l'Admin
   // complète et soumet le formulaire normal (cf. plan T3.B1, décision verrouillée avec Taha :
   // pas de champ requis employes.* devinable depuis un CV, pas de ligne "incomplète").
   @Column(name = "candidature_origine_id")
   private UUID candidatureOrigineId;
+
+  // EF-EMP-14 : conformité RH Maroc — identifiants organismes sociaux, RIB et fin de période
+  // d'essai. Tous optionnels (non connus/applicables à la création selon le profil).
+  @Column(name = "numero_cnss")
+  private String numeroCnss;
+
+  @Column(name = "numero_amo")
+  private String numeroAmo;
+
+  @Column(name = "numero_cimr")
+  private String numeroCimr;
+
+  @Column private String rib;
+
+  @Column(name = "periode_essai_fin_le")
+  private LocalDate periodeEssaiFinLe;
+
+  // EF-DOC-14 : nécessaire pour générer l'attestation de salaire — optionnel, jamais affiché sur
+  // les autres certificats/attestations.
+  @Column(name = "salaire_brut_mensuel")
+  private java.math.BigDecimal salaireBrutMensuel;
 
   @Column(name = "cree_le", insertable = false, updatable = false)
   private Instant creeLe;
@@ -101,7 +136,15 @@ class Employe {
       TypeContratEmploye typeContrat,
       LocalDate dateFinContratPrevue,
       LocalDate dateFinStagePrevue,
-      UUID candidatureOrigineId) {
+      UUID candidatureOrigineId,
+      SexeEmploye sexe,
+      String cin,
+      String sujetStage,
+      String numeroCnss,
+      String numeroAmo,
+      String numeroCimr,
+      String rib,
+      LocalDate periodeEssaiFinLe) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -114,6 +157,14 @@ class Employe {
     this.dateFinContratPrevue = dateFinContratPrevue;
     this.dateFinStagePrevue = dateFinStagePrevue;
     this.candidatureOrigineId = candidatureOrigineId;
+    this.sexe = sexe;
+    this.cin = cin;
+    this.sujetStage = sujetStage;
+    this.numeroCnss = numeroCnss;
+    this.numeroAmo = numeroAmo;
+    this.numeroCimr = numeroCimr;
+    this.rib = rib;
+    this.periodeEssaiFinLe = periodeEssaiFinLe;
   }
 
   void modifier(
@@ -125,7 +176,15 @@ class Employe {
       LocalDate dateEmbauche,
       TypeContratEmploye typeContrat,
       LocalDate dateFinContratPrevue,
-      LocalDate dateFinStagePrevue) {
+      LocalDate dateFinStagePrevue,
+      SexeEmploye sexe,
+      String cin,
+      String sujetStage,
+      String numeroCnss,
+      String numeroAmo,
+      String numeroCimr,
+      String rib,
+      LocalDate periodeEssaiFinLe) {
     this.nom = nom;
     this.prenom = prenom;
     this.email = email;
@@ -135,6 +194,20 @@ class Employe {
     this.typeContrat = typeContrat;
     this.dateFinContratPrevue = dateFinContratPrevue;
     this.dateFinStagePrevue = dateFinStagePrevue;
+    this.sexe = sexe;
+    this.cin = cin;
+    this.sujetStage = sujetStage;
+    this.numeroCnss = numeroCnss;
+    this.numeroAmo = numeroAmo;
+    this.numeroCimr = numeroCimr;
+    this.rib = rib;
+    this.periodeEssaiFinLe = periodeEssaiFinLe;
+  }
+
+  // EF-DOC-14 : champ sensible, à part du formulaire fiche standard — même principe que
+  // definirSujetStage (setter dédié plutôt qu'un 21e paramètre dans modifier()).
+  void definirSalaireBrutMensuel(java.math.BigDecimal salaireBrutMensuel) {
+    this.salaireBrutMensuel = salaireBrutMensuel;
   }
 
   void transferer(Departement nouveauDepartement, UUID nouveauManagerId) {
@@ -150,6 +223,10 @@ class Employe {
 
   void definirPhoto(UUID fichierId) {
     this.photoFichierId = fichierId;
+  }
+
+  void definirSujetStage(String sujetStage) {
+    this.sujetStage = sujetStage;
   }
 
   UUID getId() {
@@ -216,8 +293,44 @@ class Employe {
     return photoFichierId;
   }
 
+  SexeEmploye getSexe() {
+    return sexe;
+  }
+
+  String getCin() {
+    return cin;
+  }
+
+  String getSujetStage() {
+    return sujetStage;
+  }
+
   UUID getCandidatureOrigineId() {
     return candidatureOrigineId;
+  }
+
+  String getNumeroCnss() {
+    return numeroCnss;
+  }
+
+  String getNumeroAmo() {
+    return numeroAmo;
+  }
+
+  String getNumeroCimr() {
+    return numeroCimr;
+  }
+
+  String getRib() {
+    return rib;
+  }
+
+  LocalDate getPeriodeEssaiFinLe() {
+    return periodeEssaiFinLe;
+  }
+
+  java.math.BigDecimal getSalaireBrutMensuel() {
+    return salaireBrutMensuel;
   }
 
   Instant getCreeLe() {

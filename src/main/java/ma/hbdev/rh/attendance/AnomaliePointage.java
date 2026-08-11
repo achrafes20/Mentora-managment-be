@@ -43,6 +43,10 @@ class AnomaliePointage {
   @Column(nullable = false)
   private boolean resolue = false;
 
+  /** EF-ATT-11 : cette anomalie est celle qui a fait franchir le seuil et déclenché l'alerte. */
+  @Column(name = "a_declenche_alerte_seuil", nullable = false)
+  private boolean aDeclencheAlerteSeuil = false;
+
   @Column(name = "cree_le", insertable = false, updatable = false)
   private Instant creeLe;
 
@@ -63,6 +67,10 @@ class AnomaliePointage {
 
   void marquerResolue() {
     this.resolue = true;
+  }
+
+  void marquerADeclencheAlerteSeuil() {
+    this.aDeclencheAlerteSeuil = true;
   }
 
   UUID getId() {
@@ -91,6 +99,10 @@ class AnomaliePointage {
 
   boolean isResolue() {
     return resolue;
+  }
+
+  boolean isADeclencheAlerteSeuil() {
+    return aDeclencheAlerteSeuil;
   }
 
   Instant getCreeLe() {

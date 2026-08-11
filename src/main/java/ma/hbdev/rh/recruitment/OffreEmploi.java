@@ -43,6 +43,11 @@ class OffreEmploi {
   @JdbcTypeCode(SqlTypes.JSON)
   private JsonNode motsClesRequis;
 
+  // EF-REC-14 : vivier/famille de poste (enseignants-pédagogues, ingénieurs IA, designers,
+  // stagiaires...) — varchar libre plutôt qu'un enum Postgres natif comme statut : liste métier
+  // évolutive, pas un domaine figé (même choix que employee.TypeContratEmploye côté FE).
+  @Column private String categorie;
+
   @Column(name = "cree_par")
   private UUID creePar;
 
@@ -59,19 +64,27 @@ class OffreEmploi {
       String description,
       UUID departementId,
       JsonNode motsClesRequis,
-      UUID creePar) {
+      UUID creePar,
+      String categorie) {
     this.intitule = intitule;
     this.description = description;
     this.departementId = departementId;
     this.motsClesRequis = motsClesRequis;
     this.creePar = creePar;
+    this.categorie = categorie;
   }
 
-  void modifier(String intitule, String description, UUID departementId, JsonNode motsClesRequis) {
+  void modifier(
+      String intitule,
+      String description,
+      UUID departementId,
+      JsonNode motsClesRequis,
+      String categorie) {
     this.intitule = intitule;
     this.description = description;
     this.departementId = departementId;
     this.motsClesRequis = motsClesRequis;
+    this.categorie = categorie;
   }
 
   void fermer() {
@@ -106,6 +119,10 @@ class OffreEmploi {
 
   JsonNode getMotsClesRequis() {
     return motsClesRequis;
+  }
+
+  String getCategorie() {
+    return categorie;
   }
 
   UUID getCreePar() {

@@ -1,5 +1,6 @@
 package ma.hbdev.rh.employee;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +28,16 @@ interface EmployeRepository
   boolean existsByDepartementIdAndStatut(UUID departementId, StatutActifInactif statut);
 
   List<Employe> findByDepartementIdAndStatut(UUID departementId, StatutActifInactif statut);
+
+  // EF-DOC-15 : export mensuel paie — périmètre = tous les employés actifs.
+  List<Employe> findByStatut(StatutActifInactif statut);
+
+  // EF-EMP-XX : désactivation automatique quotidienne des contrats/stages arrivés à échéance.
+  List<Employe> findByStatutAndTypeContratAndDateFinContratPrevueLessThan(
+      StatutActifInactif statut, TypeContratEmploye typeContrat, LocalDate date);
+
+  List<Employe> findByStatutAndTypeContratInAndDateFinStagePrevueLessThan(
+      StatutActifInactif statut, List<TypeContratEmploye> typesContrat, LocalDate date);
 
   // Departement est LAZY : fetch-join explicite pour tout chemin de lecture qui mappe vers un DTO
   // en dehors de la transaction (sinon LazyInitializationException côté contrôleur).

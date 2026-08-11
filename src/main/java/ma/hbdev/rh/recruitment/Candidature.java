@@ -161,6 +161,11 @@ class Candidature {
     return prenom;
   }
 
+  /** Pour l'audit (journal_audit.details) — cherchable par nom de candidat, pas seulement UUID. */
+  String nomComplet() {
+    return prenom + " " + nom;
+  }
+
   String getEmail() {
     return email;
   }

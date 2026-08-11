@@ -8,6 +8,7 @@ import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.security.JwtService;
 import ma.hbdev.rh.shared.security.PasswordPolicy;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final PasswordPolicy passwordPolicy;
   private final MailService mailService;
+  private final ApplicationEventPublisher evenements;
 
   // NFR-SEC-08/EF-AUTH-09 : constantes techniques fixées au déploiement (application.yml,
   // surchargeables par variable d'environnement) — jamais admin-éditables en libre-service (cf.
@@ -202,6 +204,7 @@ public class AuthService {
     passwordResetRepository.save(reset);
 
     revoquerSessionsActives(user);
+    evenements.publishEvent(CompteEvent.motDePasseReinitialise(user.getId(), user.getEmail()));
 
     log.info("Mot de passe réinitialisé pour : {}", user.getEmail());
   }
@@ -240,6 +243,7 @@ public class AuthService {
     userRepository.save(user);
 
     revoquerSessionsActives(user);
+    evenements.publishEvent(CompteEvent.emailModifie(user.getId(), user.getEmail()));
 
     log.info("E-mail de compte modifié vers : {}", user.getEmail());
   }
@@ -271,6 +275,7 @@ public class AuthService {
     userRepository.save(user);
 
     revoquerSessionsActives(user);
+    evenements.publishEvent(CompteEvent.motDePasseModifie(user.getId(), user.getEmail()));
 
     log.info("Mot de passe de compte modifié pour : {}", user.getEmail());
   }
@@ -298,6 +303,7 @@ public class AuthService {
 
     if (attempts >= tentativesMax) {
       user.setVerrouilleJusquA(Instant.now().plusSeconds((long) delaiDeverrouillageMinutes * 60));
+      evenements.publishEvent(CompteEvent.verrouille(user.getId(), user.getEmail()));
       log.warn("Compte verrouillé après {} tentatives : {}", attempts, user.getEmail());
     } else {
       log.warn("Tentative échouée {}/{} pour : {}", attempts, tentativesMax, user.getEmail());

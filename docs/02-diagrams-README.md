@@ -305,7 +305,7 @@ comportement réel du système, pas seulement à son écran de login.
 |---|---|---|
 | **Admin RH** | Primaire | Gère tout : employés, présence, recrutement, demandes, documents |
 | **Manager** | Primaire | Lecture scoping à son département + saisie entretien + décon/connexion |
-| **Employé** | Secondaire, non connecté | Scanne son badge au kiosque uniquement (EF-ATT-01) |
+| **Employé** | Secondaire, non connecté | Pointe depuis son appareil personnel appairé, en scannant le QR de site affiché sur le lieu de travail (EF-ATT-01, EF-ATT-16, EF-ATT-17) |
 | **n8n** | Secondaire, externe | Déclenche l'ingestion de candidatures et la surveillance de fin de stage (workflows planifiés) |
 | **Service IA** | Secondaire, externe | Analyse les CV, retourne un score et une justification |
 | **Mattermost** | Secondaire, externe | Réceptionne les notifications sortantes |
@@ -747,13 +747,18 @@ d'architecture séparé.
 
 ### Issues du cahier des charges principal (`01-requirements.md` §7)
 
-1. **Modèle d'authentification du kiosque de pointage** (NFR-UX-02) —
-   trois options en présence : réseau local sans authentification, PIN
-   partagé, ou jeton par périphérique. Le choix impacte la conception de
-   l'endpoint `AttendanceRecord` (authentification requise ou non) et le
-   modèle de déploiement du poste kiosque. Sans impact bloquant sur les
-   diagrammes UML actuels ; à figer avant l'implémentation du module
-   Présence.
+1. **Modèle d'authentification du pointage** (NFR-UX-02) — *(tranché — 2026-08-06)*
+   après plusieurs itérations, le modèle retenu est un **jeton par appareil
+   personnel** (pas de kiosque partagé) : chaque employé appaire son propre
+   téléphone via un code d'activation à 4 chiffres envoyé par e-mail à sa
+   création (EF-ATT-16, EF-ATT-18), et doit en plus scanner un QR de site
+   affiché sur le lieu de travail à chaque pointage, comme second facteur
+   prouvant sa présence physique (EF-ATT-17). Le jeton d'appareil et le
+   code sont toujours stockés hachés, jamais ré-affichables en clair ; la
+   récupération en cas de perte se fait par régénération (EF-ATT-18) ou
+   par un lien de révocation self-service à usage unique envoyé dans
+   l'e-mail (EF-ATT-19). L'ancien concept de kiosque partagé unique a été
+   retiré de l'application.
 2. **Versionnement et export des workflows n8n** (NFR-OPS-05) — modalités
    à définir : stockage dans un dépôt Git dédié, export périodique
    automatisé, ou gestion manuelle. Aucun impact structurel sur les

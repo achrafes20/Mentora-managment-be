@@ -124,7 +124,7 @@ class AuthIntegrationTest {
 
   @Test
   void getMeRequiresAuth() throws Exception {
-    mockMvc.perform(get("/api/auth/me")).andExpect(status().isForbidden());
+    mockMvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
   }
 
   @Test
