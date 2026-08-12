@@ -1,9 +1,14 @@
 package ma.hbdev.rh.document;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.web.ApiResponse;
+import ma.hbdev.rh.shared.web.PagedResponse;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -45,16 +50,28 @@ class DocumentRhController {
     return ApiResponse.ok(documentRhService.listerEnvois(employeId));
   }
 
+  // Fenêtre par défaut resserrée à 10 jours (au lieu de 30) : un pic de stagiaires l'été peut
+  // produire des dizaines d'échéances simultanées, une fenêtre large noie alors l'urgent sous le
+  // lointain. `jours` reste ajustable par l'Admin pour élargir la vue au besoin. Toujours triée
+  // par échéance croissante par défaut (le plus urgent en premier), sauf tri explicite demandé.
   @GetMapping("/surveillance")
-  ApiResponse<List<NotificationPlanifieeReponse>> listerSurveillance() {
-    List<NotificationPlanifieeReponse> notifs =
+  ApiResponse<PagedResponse<NotificationPlanifieeReponse>> listerSurveillance(
+      @RequestParam(required = false, defaultValue = "10") int jours, Pageable pageable) {
+    Pageable pageableEffectif =
+        pageable.getSort().isSorted()
+            ? pageable
+            : PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                Sort.by("dateEcheance").ascending());
+    var page =
         notificationPlanifieeRepository
             .findByStatutAndDateEcheanceLessThanEqual(
-                StatutNotificationPlanifiee.planifiee, java.time.LocalDate.now().plusDays(30))
-            .stream()
-            .map(NotificationPlanifieeReponse::depuis)
-            .toList();
-    return ApiResponse.ok(notifs);
+                StatutNotificationPlanifiee.planifiee,
+                LocalDate.now().plusDays(jours),
+                pageableEffectif)
+            .map(NotificationPlanifieeReponse::depuis);
+    return ApiResponse.ok(PagedResponse.of(page));
   }
 
   // Déclenchement manuel du balayage par un Admin authentifié (bouton "Forcer exécution" côté

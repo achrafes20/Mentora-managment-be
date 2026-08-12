@@ -4,7 +4,7 @@
   "id": "ZljnpSfmg1POyS7P",
   "name": "T0.B3 - Webhook vers SMTP (Mailpit)",
   "description": null,
-  "active": true,
+  "active": false,
   "isArchived": false,
   "nodes": [
     {
@@ -70,29 +70,29 @@
   "meta": null,
   "nodeGroups": [],
   "pinData": null,
-  "versionId": "9b71384a-9734-47a7-852a-e0c864e1f226",
-  "activeVersionId": "9b71384a-9734-47a7-852a-e0c864e1f226",
+  "versionId": "bd1e6223-b549-464b-b5f3-cbb05f725f29",
+  "activeVersionId": null,
   "versionCounter": 1,
   "triggerCount": 1,
   "sourceWorkflowId": null,
   "tags": [],
   "shared": [
     {
-      "updatedAt": "2026-07-08T14:06:25.953Z",
-      "createdAt": "2026-07-08T14:06:25.953Z",
+      "updatedAt": "2026-08-10T08:14:09.035Z",
+      "createdAt": "2026-08-10T08:14:09.035Z",
       "role": "workflow:owner",
       "workflowId": "ZljnpSfmg1POyS7P",
-      "projectId": "Hg60kBF7cfoAVkky",
+      "projectId": "NahyEXo5M7qOcn0w",
       "project": {
-        "updatedAt": "2026-07-08T14:04:29.820Z",
-        "createdAt": "2026-07-08T14:02:46.737Z",
-        "id": "Hg60kBF7cfoAVkky",
-        "name": "Admin HBDev <admin@hbdev.ma>",
+        "updatedAt": "2026-08-07T14:03:18.231Z",
+        "createdAt": "2026-08-07T14:03:18.231Z",
+        "id": "NahyEXo5M7qOcn0w",
+        "name": "HB Developpement (n8n)",
         "type": "personal",
         "icon": null,
         "description": null,
         "customTelemetryTags": [],
-        "creatorId": "b1ef2a46-82dd-433c-83cc-248fc108ff01"
+        "creatorId": "ac2a1466-3e93-468d-bbdd-81ce3b3afe2a"
       }
     }
   ],

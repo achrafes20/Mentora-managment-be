@@ -117,9 +117,15 @@ class EmployeIntegrationTest {
     // notifications_planifiees référence employe_id (FK) : sans ce nettoyage, tout employé encore
     // référencé (CDD/stage avec une date de fin future ayant déclenché une notification planifiée
     // via SurveillancePlanifieeService) bloque le employeRepository.deleteAll() du test suivant.
+    // pointages/qr_codes référencent aussi employe_id : depuis que QrCodeService génère un QR dès
+    // la création (EF-ATT-01, EmployeModifieEvent "creation"), chaque employé de test en a un,
+    // qui bloquait employeRepository.deleteAll() de la même façon. anomalies_pointage référence à
+    // son tour pointages — Postgres exige que toute table qui référence une table de la liste
+    // TRUNCATE soit elle aussi listée (ou CASCADE), d'où l'ordre : anomalies_pointage avant
+    // pointages avant qr_codes.
     jdbcTemplate.execute(
         "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit,"
-            + " notifications_planifiees");
+            + " notifications_planifiees, anomalies_pointage, pointages, qr_codes");
   }
 
   private String login(String email, String motDePasse) throws Exception {

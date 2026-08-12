@@ -72,15 +72,24 @@ class SurveillancePlanifieeService {
       LocalDate dateFinStage = employe.dateFinStagePrevue();
       if (dateFinStage != null) {
         creerNotification(
-            employe.id(), TypeFinSurveillee.fin_stage, soustraireJoursOuvres(dateFinStage, 3));
+            employe.id(),
+            TypeFinSurveillee.fin_stage,
+            soustraireJoursOuvres(dateFinStage, 3),
+            dateFinStage);
       }
     } else if ("CDD".equals(typeContrat)) {
       LocalDate dateFinCdd = employe.dateFinContratPrevue();
       if (dateFinCdd != null) {
         creerNotification(
-            employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFinCdd, 15));
+            employe.id(),
+            TypeFinSurveillee.fin_cdd,
+            soustraireJoursOuvres(dateFinCdd, 15),
+            dateFinCdd);
         creerNotification(
-            employe.id(), TypeFinSurveillee.fin_cdd, soustraireJoursOuvres(dateFinCdd, 3));
+            employe.id(),
+            TypeFinSurveillee.fin_cdd,
+            soustraireJoursOuvres(dateFinCdd, 3),
+            dateFinCdd);
       }
     }
   }
@@ -236,11 +245,22 @@ class SurveillancePlanifieeService {
     }
   }
 
-  private void creerNotification(UUID employeId, TypeFinSurveillee type, LocalDate echeance) {
-    if (echeance.isAfter(LocalDate.now()) || echeance.isEqual(LocalDate.now())) {
-      NotificationPlanifiee notif = new NotificationPlanifiee(employeId, type, echeance);
-      notificationPlanifieeRepository.save(notif);
+  /**
+   * Si l'échéance calculée (J-3/J-15 ouvrés) tombe déjà dans le passé au moment où l'employé est
+   * enregistré — date de fin très proche ou modifiée tardivement — on ne l'abandonne plus
+   * silencieusement : on la ramène à aujourd'hui tant que la date de fin réelle n'est pas encore
+   * passée, pour que le prochain balayage l'envoie quand même (bug : sinon aucune notification
+   * n'était jamais créée pour un CDD/stage se terminant sous 3 jours ouvrés).
+   */
+  private void creerNotification(
+      UUID employeId, TypeFinSurveillee type, LocalDate echeance, LocalDate dateFin) {
+    LocalDate aujourdHui = LocalDate.now();
+    if (dateFin.isBefore(aujourdHui)) {
+      return;
     }
+    LocalDate echeanceEffective = echeance.isBefore(aujourdHui) ? aujourdHui : echeance;
+    NotificationPlanifiee notif = new NotificationPlanifiee(employeId, type, echeanceEffective);
+    notificationPlanifieeRepository.save(notif);
   }
 
   private LocalDate soustraireJoursOuvres(LocalDate date, int joursOuvres) {

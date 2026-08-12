@@ -91,6 +91,7 @@ Comment les secrets sont provisionnés selon l'environnement :
 | `DELEGATIONS_EXPIRATION_CRON` | Non | Défaut `0 30 2 * * *`. |
 | `DOCUMENTS_SURVEILLANCE_CRON` | Non | Défaut `0 0 3 * * *`. |
 | `RECRUITMENT_ARCHIVAGE_CRON` | Non | Défaut `0 30 3 * * *`. |
+| `N8N_BASE_URL` | **Oui** | URL de n8n vue depuis le backend (réseau interne), ex. `http://rh-n8n:5678`. Sert à tous les envois sortants qui passent par le webhook SMTP de n8n : réinitialisation de mot de passe, certificats/documents RH, rejet de candidature, code d'activation et lien de révocation du pointage mobile. |
 
 ### Frontend
 
@@ -191,4 +192,5 @@ Le reste scale sans souci : Flyway (verrou géré), JWT stateless (pas de sticky
 3. Les secrets de production (§5) ne sont pas gérés de notre côté — à mettre en place avant le déploiement.
 4. L'interface n8n (§9) n'est pas protégée dans notre configuration de dev — à sécuriser en production.
 5. Le TLS/Ingress reste à configurer selon vos standards habituels.
+6. Le pointage mobile (§5, `APP_BASE_URL`) dépend de n8n/SMTP dès la création d'un employé : le code d'activation par téléphone n'est envoyé que par e-mail. Si n8n ou le SMTP est indisponible à ce moment-là, l'employé ne peut pas s'appairer tant qu'un Admin n'a pas régénéré le code manuellement depuis l'écran Kiosque.
 

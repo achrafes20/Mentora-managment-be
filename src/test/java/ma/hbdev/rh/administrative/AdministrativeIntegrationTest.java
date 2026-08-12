@@ -260,6 +260,31 @@ class AdministrativeIntegrationTest {
         .andExpect(jsonPath("$.data.dureeJours").value(1));
   }
 
+  // Bug corrigé (EF-ADM-14) : la durée n'était calculée que pour typeDemande="conge", tous les
+  // congés spéciaux (mariage/naissance/décès/maladie) retombaient toujours à 0 malgré une vraie
+  // plage de dates — visible notamment dans l'export des demandes administratives. "Hors solde"
+  // (jamais de mouvement sur le registre) et "durée nulle" sont deux règles distinctes ; seule la
+  // première doit s'appliquer aux congés spéciaux.
+  @Test
+  void calculeUneDureeReellePourUnCongeSpecialMemeHorsSolde() throws Exception {
+    LocalDate debut = prochainLundiAuMoins(8);
+    LocalDate fin = debut.plusDays(4); // lundi -> vendredi, 5 jours ouvrés
+
+    mockMvc
+        .perform(
+            post("/api/demandes-administratives")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"employeId":"%s","typeDemande":"conge_mariage",
+                     "dateDebut":"%s","dateFin":"%s","motif":"Mariage"}
+                    """
+                        .formatted(employeId, debut, fin)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.dureeJours").value(5));
+  }
+
   @Test
   void refuseUneDemandeDeCongeChevauchantUnePeriodeDeBlocage() throws Exception {
     LocalDate debut = prochainLundiAuMoins(15);

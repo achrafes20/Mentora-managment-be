@@ -141,6 +141,57 @@ class SurveillancePlanifieeServiceTest {
         .save(any(NotificationPlanifiee.class));
   }
 
+  // Bug corrigé : une échéance CDD/stage se terminant sous 3 jours ouvrés faisait tomber
+  // l'échéance J-3/J-15 calculée dans le passé, et creerNotification() abandonnait alors
+  // silencieusement la création — aucune alerte n'était jamais programmée pour ces employés,
+  // et "Forcer exécution Cron" ne pouvait pas la rattraper (il ne rejoue que les notifications
+  // déjà en base). On ramène désormais l'échéance à aujourd'hui tant que la date de fin réelle
+  // n'est pas encore passée.
+  @Test
+  void testGererEvenementEmploye_StageFinitAujourdHui_creeNotificationEcheanceAujourdHui() {
+    UUID employeId = UUID.randomUUID();
+    EmployeReponse employe =
+        new EmployeReponse(
+            employeId,
+            "Nom",
+            "Prenom",
+            "email",
+            "tel",
+            "poste",
+            UUID.randomUUID(),
+            "dept",
+            null,
+            LocalDate.now(),
+            "STAGIAIRE",
+            null,
+            LocalDate.now(),
+            null,
+            null,
+            "actif",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    when(employeService.recuperer(employeId)).thenReturn(employe);
+
+    service.gererEvenementEmploye(
+        new EmployeModifieEvent(employeId, "modification", "Test Employe"));
+
+    org.mockito.ArgumentCaptor<NotificationPlanifiee> captor =
+        org.mockito.ArgumentCaptor.forClass(NotificationPlanifiee.class);
+    verify(repository).save(captor.capture());
+    assertThat(captor.getValue().getDateEcheance()).isEqualTo(LocalDate.now());
+  }
+
   private EmployeReponse employeStagiaire(UUID employeId) {
     return new EmployeReponse(
         employeId,

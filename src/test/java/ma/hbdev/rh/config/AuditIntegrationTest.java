@@ -261,6 +261,78 @@ class AuditIntegrationTest {
         .andExpect(jsonPath("$.data.totalElements").value(1));
   }
 
+  // Régression bout en bout, même motif que le test compte ci-dessus : DemandeAdministrativeEvent
+  // portait déjà employeNomComplet (utilisé pour le corps de la notification) mais n'exposait
+  // jamais ce champ via details() — recherche libre par nom d'employé toujours vide sur la
+  // catégorie la plus fréquente du journal (creation/approbation/rejet/annulation).
+  @Test
+  void demandeAdministrativeEstAuditeeEtTrouvableParRechercheTexteLibre() throws Exception {
+    UUID deptId =
+        UUID.fromString(
+            objectMapper
+                .readTree(
+                    mockMvc
+                        .perform(
+                            post("/api/departements")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"nom\":\"Audit Test\",\"managerId\":null}"))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .at("/data/id")
+                .asText());
+
+    UUID employeId =
+        UUID.fromString(
+            objectMapper
+                .readTree(
+                    mockMvc
+                        .perform(
+                            post("/api/employes")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                    """
+                                    {"nom":"Zniber","prenom":"Salwa","email":"salwa.zniber@hbdev.ma",
+                                     "poste":"Dev","departementId":"%s","dateEmbauche":"2025-01-01",
+                                     "typeContrat":"CDI"}
+                                    """
+                                        .formatted(deptId)))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .at("/data/id")
+                .asText());
+
+    mockMvc
+        .perform(
+            post("/api/demandes-administratives")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"employeId":"%s","typeDemande":"bon_sortie","dateDebut":"%s",
+                     "heureDepart":"10:00","heureRetourPrevue":"11:00","motif":"RDV"}
+                    """
+                        .formatted(employeId, LocalDate.now().plusDays(1))))
+        .andExpect(status().isOk());
+
+    // 2, pas 1 : "Zniber" matche aussi l'entrée employe.creation de Salwa elle-même (même mécanisme
+    // EF-CFG-04, cf. EmployeModifieEvent#details()) — le point testé ici est que l'entrée
+    // demande_administrative apparaisse désormais dans les résultats, pas qu'elle soit seule.
+    mockMvc
+        .perform(
+            get("/api/audit")
+                .param("recherche", "Zniber")
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalElements").value(2))
+        .andExpect(
+            jsonPath("$.data.content[?(@.module == 'demande_administrative')].details.employe")
+                .value("Salwa Zniber"));
+  }
+
   @Test
   void refuseAuManager() throws Exception {
     mockMvc

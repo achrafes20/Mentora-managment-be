@@ -12,7 +12,10 @@
       "name": "IMAP Recrutement",
       "type": "n8n-nodes-base.emailReadImap",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "parameters": {
         "mailbox": "INBOX",
         "format": "resolved",
@@ -30,7 +33,10 @@
       "name": "POST /api/recruitment/ingest",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [520, 300],
+      "position": [
+        520,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "http://backend:8080/api/recruitment/ingest",
@@ -102,13 +108,32 @@
   "meta": null,
   "nodeGroups": [],
   "pinData": null,
-  "versionId": "t3b1-imap-ingest-v1",
-  "activeVersionId": "t3b1-imap-ingest-v1",
+  "versionId": "7013263a-f2d4-4e89-be16-f1eeca8cb1f8",
+  "activeVersionId": null,
   "versionCounter": 1,
   "triggerCount": 1,
   "sourceWorkflowId": null,
   "tags": [],
-  "shared": [],
+  "shared": [
+    {
+      "updatedAt": "2026-08-10T08:14:09.027Z",
+      "createdAt": "2026-08-10T08:14:09.027Z",
+      "role": "workflow:owner",
+      "workflowId": "T3B1RecrutementImapIngest001",
+      "projectId": "NahyEXo5M7qOcn0w",
+      "project": {
+        "updatedAt": "2026-08-07T14:03:18.231Z",
+        "createdAt": "2026-08-07T14:03:18.231Z",
+        "id": "NahyEXo5M7qOcn0w",
+        "name": "HB Developpement (n8n)",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "ac2a1466-3e93-468d-bbdd-81ce3b3afe2a"
+      }
+    }
+  ],
   "versionMetadata": {
     "name": null,
     "description": null
