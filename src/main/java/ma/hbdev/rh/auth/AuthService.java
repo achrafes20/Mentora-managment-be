@@ -73,7 +73,7 @@ public class AuthService {
 
     // Vérification du verrouillage (EF-AUTH-03)
     if (user.isLocked()) {
-      throw new AuthException("Compte temporairement verrouillé. Réessayez dans quelques minutes.");
+      throw new CompteVerrouilleException(user.getVerrouilleJusquA());
     }
 
     // Vérification du mot de passe
@@ -152,7 +152,9 @@ public class AuthService {
               passwordResetRepository.save(reset);
 
               String resetLink =
-                  appBaseUrl.replaceAll("/+$", "") + "/reset-password?token=" + rawToken;
+                  appBaseUrl.replaceAll("/+$", "")
+                      + "/reinitialiser-mot-de-passe?token="
+                      + rawToken;
               String subject = "[Mentora] Réinitialisation de votre mot de passe";
               String message =
                   "Bonjour "

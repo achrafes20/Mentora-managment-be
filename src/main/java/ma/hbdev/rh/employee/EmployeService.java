@@ -1,5 +1,6 @@
 package ma.hbdev.rh.employee;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -528,6 +529,10 @@ public class EmployeService {
   // volontairement simple (pas de déduction weekends/fériés/congés) : c'est un repère pour le
   // comptable, pas un décompte réglementaire de jours ouvrés.
   private int joursBadges(UUID employeId, Instant debut, Instant fin) {
+    // jdbcTemplate.queryForObject(..., Object... args) lie les paramètres via setObject() sans
+    // type explicite — le driver PostgreSQL ne sait pas déduire le type SQL d'un Instant brut
+    // (PSQLException: "Can't infer the SQL type"), contrairement à java.sql.Timestamp qu'il
+    // mappe nativement sur timestamptz.
     Integer compte =
         jdbcTemplate.queryForObject(
             """
@@ -537,8 +542,8 @@ public class EmployeService {
             """,
             Integer.class,
             employeId,
-            debut,
-            fin);
+            Timestamp.from(debut),
+            Timestamp.from(fin));
     return compte == null ? 0 : compte;
   }
 

@@ -98,8 +98,14 @@ class ImportIntegrationTest {
   }
 
   private void nettoyerTracesTransverses() {
+    // pointages/qr_codes référencent employe_id : depuis que QrCodeService génère un QR dès la
+    // création (EF-ATT-01, EmployeModifieEvent "creation"), chaque employé de test en a un, qui
+    // bloquait employeRepository.deleteAll(). anomalies_pointage référence à son tour pointages —
+    // Postgres exige que toute table qui référence une table de la liste TRUNCATE soit elle aussi
+    // listée (ou CASCADE).
     jdbcTemplate.execute(
-        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit");
+        "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit,"
+            + " anomalies_pointage, pointages, qr_codes");
   }
 
   private String login(String email, String motDePasse) throws Exception {

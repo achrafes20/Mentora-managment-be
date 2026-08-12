@@ -67,6 +67,14 @@ n8n stocke ses workflows/credentials dans un volume Docker persistant
 - **Après avoir modifié un workflow dans l'UI n8n** : `make n8n-export`
   (exécute `n8n export:workflow --all --separate --pretty
   --output=/n8n/workflows/`, un fichier JSON par workflow, à committer).
+  La cible enchaîne automatiquement `scripts/sanitize-n8n-export.js` :
+  chaque export n8n embarque, dans `shared[].project.name`, le nom + e-mail
+  réel du compte propriétaire de l'instance qui a exporté (ex. `Prenom Nom
+  <perso@gmail.com>`) — le script le remplace par un placeholder fixe
+  (`"HB Developpement (n8n)"`) avant que le fichier n'atterrisse dans
+  `n8n/workflows/`. Rien à faire manuellement ; si le message final indique
+  `0/N fichier(s)` nettoyés, c'est que les fichiers étaient déjà propres,
+  pas un échec.
 - **Après avoir cloné le repo / reset le volume n8n** : `make n8n-import`
   (exécute `n8n import:workflow --separate --input=/n8n/workflows/`), puis
   recréer les credentials manquants (étape 3 ci-dessus) et activer les

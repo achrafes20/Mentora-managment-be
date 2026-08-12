@@ -1,5 +1,6 @@
 package ma.hbdev.rh.administrative;
 
+import java.util.Map;
 import java.util.UUID;
 import ma.hbdev.rh.shared.event.EvenementMetier;
 import ma.hbdev.rh.shared.event.ModuleAudit;
@@ -33,6 +34,15 @@ record DemandeAdministrativeEvent(
   @Override
   public boolean decisionDelegable() {
     return "approbation".equals(action) || "rejet".equals(action) || "annulation".equals(action);
+  }
+
+  // EF-CFG-04 : rend l'audit cherchable par nom d'employé (même motif que EmployeModifieEvent),
+  // pas seulement par UUID opaque — sans ça, la recherche libre ne trouvait jamais les entrées
+  // demande_administrative (creation/approbation/rejet/annulation), pourtant la catégorie la plus
+  // fréquente du journal.
+  @Override
+  public Map<String, Object> details() {
+    return employeNomComplet == null ? Map.of() : Map.of("employe", employeNomComplet);
   }
 
   @Override

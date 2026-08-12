@@ -52,6 +52,7 @@ n8n-export:
 	@echo "==> Export des workflows n8n..."
 	docker compose exec n8n n8n export:workflow --all --separate --pretty --output=/n8n/workflows/ 2>/dev/null || \
 		echo "ERREUR : le service n8n n'est pas démarré. Lancez 'make up-d' d'abord."
+	@node scripts/sanitize-n8n-export.js
 
 ## Importe tous les workflows du dossier n8n/workflows/ dans l'instance locale
 n8n-import:

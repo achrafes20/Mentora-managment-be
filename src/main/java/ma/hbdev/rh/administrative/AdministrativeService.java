@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -39,6 +40,19 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 class AdministrativeService {
+
+  // EF-ADM-14 : les congés spéciaux ont une vraie plage de dates (durée réelle en jours ouvrés,
+  // affichée notamment dans l'export) même s'ils ne débitent jamais le solde (cf. duree() et le
+  // garde-fou sur TypeDemandeAdministrative ci-dessous, à ne pas confondre : "hors solde" et
+  // "durée nulle" sont deux choses différentes). bon_sortie/document_libre/autre restent à 0, ils
+  // ne représentent pas une absence en jours.
+  private static final EnumSet<TypeDemandeAdministrative> TYPES_AVEC_DUREE_EN_JOURS =
+      EnumSet.of(
+          TypeDemandeAdministrative.conge,
+          TypeDemandeAdministrative.conge_mariage,
+          TypeDemandeAdministrative.conge_naissance,
+          TypeDemandeAdministrative.conge_deces,
+          TypeDemandeAdministrative.conge_maladie);
 
   private static final List<String> ENTETES_EXPORT_DEMANDES =
       List.of(
@@ -351,9 +365,11 @@ class AdministrativeService {
       GranulariteConge granularite,
       LocalDate debut,
       LocalDate fin) {
-    if (type != TypeDemandeAdministrative.conge || debut == null || fin == null) {
+    if (!TYPES_AVEC_DUREE_EN_JOURS.contains(type) || debut == null || fin == null) {
       return BigDecimal.ZERO;
     }
+    // La granularité demi-journée n'existe que pour "conge" (congés spéciaux non concernés, cf.
+    // EF-ADM-14 — leur granularite reste toujours null en base).
     if (granularite == GranulariteConge.demi_matin
         || granularite == GranulariteConge.demi_apres_midi) {
       return new BigDecimal("0.5");

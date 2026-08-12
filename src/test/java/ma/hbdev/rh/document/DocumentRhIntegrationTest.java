@@ -218,7 +218,9 @@ class DocumentRhIntegrationTest {
                 .header("Authorization", "Bearer " + managerToken))
         .andExpect(status().isForbidden());
 
-    assertThat(appelsWebhook.get()).isZero();
+    // 1, pas 0 : creerEmploye() envoie un e-mail (code de pointage kiosque, EF-ATT-18) dès la
+    // création — tous les appels ci-dessus sont rejetés en RBAC avant d'atteindre le webhook.
+    assertThat(appelsWebhook.get()).isEqualTo(1);
   }
 
   @Test
@@ -257,8 +259,9 @@ class DocumentRhIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(3));
 
-    // Les trois envois sont bien passés par le (stub) webhook n8n, pas seulement persistés.
-    assertThat(appelsWebhook.get()).isEqualTo(3);
+    // 4, pas 3 : les trois envois de document + l'e-mail de code kiosque envoyé automatiquement
+    // à la création de l'employé (EF-ATT-18) sont tous bien passés par le (stub) webhook n8n.
+    assertThat(appelsWebhook.get()).isEqualTo(4);
   }
 
   @Test
@@ -273,7 +276,8 @@ class DocumentRhIntegrationTest {
         .andExpect(jsonPath("$.data.typeDocument").value("attestation_travail"))
         .andExpect(jsonPath("$.data.destinataireEmail").value("attestation@hbdev.ma"));
 
-    assertThat(appelsWebhook.get()).isEqualTo(1);
+    // 2 : e-mail de code kiosque à la création (EF-ATT-18) + l'envoi de l'attestation.
+    assertThat(appelsWebhook.get()).isEqualTo(2);
   }
 
   @Test
@@ -296,7 +300,9 @@ class DocumentRhIntegrationTest {
             jsonPath("$.error")
                 .value("L'attestation de travail n'est disponible que pour un employé actif."));
 
-    assertThat(appelsWebhook.get()).isZero();
+    // 1, pas 0 : e-mail de code kiosque envoyé à la création (EF-ATT-18) ; la désactivation et le
+    // refus d'attestation ci-dessus ne déclenchent aucun envoi supplémentaire.
+    assertThat(appelsWebhook.get()).isEqualTo(1);
   }
 
   @Test
@@ -343,7 +349,9 @@ class DocumentRhIntegrationTest {
                 .value(
                     "L'attestation de travail n'est disponible que pour un employé CDI ou CDD."));
 
-    assertThat(appelsWebhook.get()).isZero();
+    // 1, pas 0 : e-mail de code kiosque à la création (EF-ATT-18), tous types de contrat confondus
+    // — y compris Stagiaire, cf. KiosqueActivationService#gererEvenementEmploye.
+    assertThat(appelsWebhook.get()).isEqualTo(1);
   }
 
   @Test
@@ -393,7 +401,8 @@ class DocumentRhIntegrationTest {
             String.class,
             notif.getId());
     assertThat(statutApres).isEqualTo("envoyee");
-    assertThat(appelsWebhook.get()).isEqualTo(1);
+    // 2 : e-mail de code kiosque à la création (EF-ATT-18) + l'alerte de surveillance envoyée.
+    assertThat(appelsWebhook.get()).isEqualTo(2);
   }
 
   @Test
@@ -406,8 +415,8 @@ class DocumentRhIntegrationTest {
     mockMvc
         .perform(get("/api/documents/surveillance").header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data[0].id").value(notif.getId().toString()))
-        .andExpect(jsonPath("$.data[0].statut").value("planifiee"));
+        .andExpect(jsonPath("$.data.content[0].id").value(notif.getId().toString()))
+        .andExpect(jsonPath("$.data.content[0].statut").value("planifiee"));
 
     mockMvc
         .perform(
@@ -422,7 +431,8 @@ class DocumentRhIntegrationTest {
             String.class,
             notif.getId());
     assertThat(statutApres).isEqualTo("envoyee");
-    assertThat(appelsWebhook.get()).isEqualTo(1);
+    // 2 : e-mail de code kiosque à la création (EF-ATT-18) + le renvoi du certificat.
+    assertThat(appelsWebhook.get()).isEqualTo(2);
   }
 
   // Même garde que RecruitmentIngestionController (InternalWebhookGuard) — jamais exercée ici
@@ -454,6 +464,7 @@ class DocumentRhIntegrationTest {
             String.class,
             notif.getId());
     assertThat(statutApres).isEqualTo("envoyee");
-    assertThat(appelsWebhook.get()).isEqualTo(1);
+    // 2 : e-mail de code kiosque à la création (EF-ATT-18) + l'alerte de surveillance envoyée.
+    assertThat(appelsWebhook.get()).isEqualTo(2);
   }
 }

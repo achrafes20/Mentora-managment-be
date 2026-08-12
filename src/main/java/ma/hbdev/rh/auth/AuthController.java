@@ -3,14 +3,17 @@ package ma.hbdev.rh.auth;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.security.JwtService;
 import ma.hbdev.rh.shared.web.ApiResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -121,5 +124,20 @@ public class AuthController {
     UUID userId = CurrentUser.id().orElseThrow(() -> new AuthException("Authentification requise"));
     authService.changePassword(userId, request);
     return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  // EF-AUTH-03 : plus spécifique que le AuthException générique du GlobalExceptionHandler (401 sans
+  // data) — porte l'échéance du verrouillage pour que le frontend affiche un décompte, même pattern
+  // que KiosqueController#gererCodeInvalide (NFR-UX-02).
+  @ExceptionHandler(CompteVerrouilleException.class)
+  ResponseEntity<ApiResponse<VerrouillageReponse>> gererCompteVerrouille(
+      CompteVerrouilleException ex) {
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        .body(
+            new ApiResponse<>(
+                false,
+                new VerrouillageReponse(ex.getVerrouilleJusquA()),
+                ex.getMessage(),
+                Instant.now()));
   }
 }

@@ -13,11 +13,12 @@ import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.security.JwtService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * NFR-UX-02 : jeton d'activation par appareil pour le kiosque de pointage — remplace le {@code
@@ -133,8 +134,21 @@ class KiosqueActivationService {
   // EF-ATT-18 : déclenché à la création d'un employé (EmployeModifieEvent action "creation") —
   // le nouvel employé reçoit directement son code de pointage mobile, pas d'étape manuelle
   // supplémentaire pour l'Admin. CurrentUser reste résolu sur l'Admin qui a créé la fiche (même
-  // thread de requête que la publication de l'événement).
-  @EventListener
+  // thread de requête, seulement après le commit — cf. AFTER_COMMIT ci-dessous).
+  // @TransactionalEventListener (pas @EventListener) : EmployeService#creer publie cet événement
+  // en plein milieu de sa propre transaction, juste après employeRepository.save(...) — pour une
+  // entité à ID généré côté client (UUID), Hibernate peut différer l'INSERT réel jusqu'au flush.
+  // Un @EventListener classique tournait donc AVANT que la ligne employe soit visible, et
+  // employeInfoCode() (lecture SQL brute, hors du cache Hibernate) ne trouvait rien : le code
+  // d'activation était bien créé (repository.save ici participe à la même transaction ambiante,
+  // peu importe l'ordre), mais l'e-mail ne partait jamais, silencieusement (aucun log, ni succès
+  // ni échec, puisque mailService.sendEmail n'était jamais atteint). AFTER_COMMIT (défaut) attend
+  // que la transaction d'EmployeService#creer soit réellement validée avant de lire l'employé.
+  // Propagation REQUIRES_NEW obligatoire ici : Spring refuse @TransactionalEventListener sur une
+  // méthode qui hériterait du @Transactional (REQUIRED) de la classe — à AFTER_COMMIT, la
+  // transaction d'origine est déjà terminée, il en faut explicitement une nouvelle.
+  @TransactionalEventListener
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
   void gererEvenementEmploye(EmployeModifieEvent event) {
     if ("creation".equals(event.action())) {
       genererCodePersonnel(event.employeId());
