@@ -166,10 +166,13 @@ class DocumentRhController {
   @PostMapping("/employes/{employeId}/document-libre")
   @ResponseStatus(HttpStatus.CREATED)
   ApiResponse<EnvoiDocumentResponse> envoyerDocumentLibre(
-      @PathVariable UUID employeId, @RequestParam("file") MultipartFile file) {
+      @PathVariable UUID employeId,
+      @RequestParam("file") MultipartFile file,
+      @RequestParam(value = "corpsMessage", required = false) String corpsMessage) {
     UUID utilisateurConnecteId = CurrentUser.id().orElse(null);
     EnvoiDocument envoi =
-        documentRhService.envoyerDocumentLibre(employeId, file, utilisateurConnecteId);
+        documentRhService.envoyerDocumentLibre(
+            employeId, file, corpsMessage, utilisateurConnecteId);
     return ApiResponse.ok(EnvoiDocumentResponse.depuis(envoi));
   }
 

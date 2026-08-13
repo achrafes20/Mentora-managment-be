@@ -9,6 +9,7 @@ import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import ma.hbdev.rh.shared.web.ApiResponse;
 import ma.hbdev.rh.shared.web.PagedResponse;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -63,8 +64,28 @@ class AdministrativeController {
         PagedResponse.of(service.lister(employeId, type, statut, debut, fin, pageable)));
   }
 
-  // EF-EXP-03 : réutilise lister() (mêmes filtres/périmètre) — chemin statique, aucune ambiguïté
-  // avec "/{id}/..." (pas de mapping "/{id}" seul sur ce contrôleur).
+  // Consommé par le lien "voir la demande" du registre de congés. Spring fait toujours passer un
+  // segment statique ("/export", "/jours-feries"...) avant "/{id}" au même niveau, donc aucune
+  // ambiguïté malgré le commentaire historique ci-dessous sur /export.
+  @GetMapping("/{id}")
+  ApiResponse<DemandeAdministrativeReponse> trouver(@PathVariable UUID id) {
+    return ApiResponse.ok(service.trouverDetail(id));
+  }
+
+  // "inline" (pas "attachment") : laisse le navigateur prévisualiser PDF/image, même principe que
+  // EmployeController#telechargerDocument.
+  @GetMapping("/{id}/justificatif")
+  ResponseEntity<Resource> telechargerJustificatif(@PathVariable UUID id) {
+    JustificatifTelecharge telecharge = service.telechargerJustificatif(id);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(telecharge.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.inline().filename(telecharge.nomOriginal()).build().toString())
+        .body(telecharge.ressource());
+  }
+
+  // EF-EXP-03 : réutilise lister() (mêmes filtres/périmètre).
   @GetMapping("/export")
   ResponseEntity<byte[]> exporter(
       @RequestParam FormatExport format,
@@ -91,7 +112,7 @@ class AdministrativeController {
 
   // EF-ADM-14 : justificatif (arrêt de travail...) téléversé avant la création de la demande —
   // même mécanisme que la photo/les documents employé (shared/file), l'UUID retourné est ensuite
-  // passé en fichierDocumentLibreId dans DemandeAdministrativeRequete.
+  // passé en fichierJustificatifId dans DemandeAdministrativeRequete.
   @PostMapping("/justificatif")
   ApiResponse<UUID> televerserJustificatif(@RequestParam("fichier") MultipartFile fichier) {
     UUID televersePar = CurrentUser.id().orElse(null);

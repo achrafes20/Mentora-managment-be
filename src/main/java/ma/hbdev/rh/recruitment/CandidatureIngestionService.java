@@ -13,6 +13,7 @@ import ma.hbdev.rh.shared.ai.CvAnalysisProvider;
 import ma.hbdev.rh.shared.file.FichierInvalideException;
 import ma.hbdev.rh.shared.file.FichierUploade;
 import ma.hbdev.rh.shared.file.FileStorageService;
+import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -127,6 +128,58 @@ class CandidatureIngestionService {
     evenements.publishEvent(
         new CandidatureModifieEvent(candidature.getId(), "ingestion", candidature.nomComplet()));
     declencherAnalyse(candidature, fichier, offreCorrespondante, null);
+    return candidature;
+  }
+
+  // Création manuelle par l'Admin (candidat reçu au bureau, CV papier ou pas encore numérisé) —
+  // même dédup/stockage CV que l'ingestion e-mail, mais deux différences délibérées : (1) offre
+  // optionnelle explicitement acceptée (un candidat spontané au guichet n'est pas différent d'un
+  // e-mail spontané qui ne matche aucune offre ouverte, cf. resoudreOffre() ci-dessous) ; (2)
+  // statut
+  // initial preselectionne (pas recu, qui suppose une candidature pas encore vue par un humain —
+  // celle-ci vient d'être saisie par l'Admin lui-même) et aucune analyse IA déclenchée
+  // automatiquement : l'Admin la lance volontairement via "Relancer l'analyse" une fois le CV
+  // disponible/prêt, plutôt que de payer un appel IA sur une simple fiche de contact.
+  Candidature creerManuellement(
+      UUID offreId,
+      String nom,
+      String prenom,
+      String email,
+      String telephone,
+      MultipartFile cv,
+      String notes) {
+    if (offreId != null) {
+      offreEmploiRepository
+          .findById(offreId)
+          .orElseThrow(() -> new OffreEmploiIntrouvableException(offreId));
+      if (candidatureRepository.findByOffreIdAndEmail(offreId, email).isPresent()) {
+        throw new CandidatureDejaExistanteException(email);
+      }
+    }
+
+    FichierUploade fichier = null;
+    if (cv != null && !cv.isEmpty()) {
+      fichier = fileStorageService.televerser(cv, CurrentUser.id().orElse(null));
+    }
+
+    Candidature candidature =
+        candidatureRepository.save(
+            new Candidature(
+                offreId,
+                nom,
+                prenom,
+                email,
+                telephone,
+                null,
+                SourceCandidature.direct,
+                fichier != null ? fichier.id() : null,
+                StatutCandidature.preselectionne,
+                null,
+                notes));
+
+    evenements.publishEvent(
+        new CandidatureModifieEvent(
+            candidature.getId(), "creation_manuelle", candidature.nomComplet()));
     return candidature;
   }
 

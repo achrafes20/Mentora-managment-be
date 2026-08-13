@@ -16,6 +16,7 @@ import ma.hbdev.rh.auth.DelegationService;
 import ma.hbdev.rh.shared.export.FormatExport;
 import ma.hbdev.rh.shared.export.FormatageExport;
 import ma.hbdev.rh.shared.export.TableauExportService;
+import ma.hbdev.rh.shared.file.FileStorageService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -44,8 +45,8 @@ class AdministrativeService {
   // EF-ADM-14 : les congés spéciaux ont une vraie plage de dates (durée réelle en jours ouvrés,
   // affichée notamment dans l'export) même s'ils ne débitent jamais le solde (cf. duree() et le
   // garde-fou sur TypeDemandeAdministrative ci-dessous, à ne pas confondre : "hors solde" et
-  // "durée nulle" sont deux choses différentes). bon_sortie/document_libre/autre restent à 0, ils
-  // ne représentent pas une absence en jours.
+  // "durée nulle" sont deux choses différentes). bon_sortie/autre restent à 0, ils ne
+  // représentent pas une absence en jours.
   private static final EnumSet<TypeDemandeAdministrative> TYPES_AVEC_DUREE_EN_JOURS =
       EnumSet.of(
           TypeDemandeAdministrative.conge,
@@ -76,6 +77,7 @@ class AdministrativeService {
   private final ApplicationEventPublisher evenements;
   private final DelegationService delegationService;
   private final TableauExportService tableauExportService;
+  private final FileStorageService fileStorageService;
 
   AdministrativeService(
       DemandeAdministrativeRepository demandeRepository,
@@ -86,7 +88,8 @@ class AdministrativeService {
       JdbcTemplate jdbcTemplate,
       ApplicationEventPublisher evenements,
       DelegationService delegationService,
-      TableauExportService tableauExportService) {
+      TableauExportService tableauExportService,
+      FileStorageService fileStorageService) {
     this.demandeRepository = demandeRepository;
     this.mouvementRepository = mouvementRepository;
     this.jourFerieRepository = jourFerieRepository;
@@ -96,6 +99,7 @@ class AdministrativeService {
     this.evenements = evenements;
     this.delegationService = delegationService;
     this.tableauExportService = tableauExportService;
+    this.fileStorageService = fileStorageService;
   }
 
   @Transactional(readOnly = true)
@@ -177,7 +181,7 @@ class AdministrativeService {
               demande.getId(),
               TypeMouvementCongeAdm.consommation,
               duree.negate(),
-              "Consommation demande " + demande.getId(),
+              "Consommation - conge approuve",
               utilisateurCourant()));
     }
     demande.approuver(utilisateurCourant());
@@ -217,7 +221,7 @@ class AdministrativeService {
               demande.getId(),
               TypeMouvementCongeAdm.recredit,
               duree(demande),
-              "Recredit annulation demande " + demande.getId(),
+              "Recredit - annulation conge",
               utilisateurCourant()));
     }
     demande.annuler(utilisateurCourant());
@@ -226,11 +230,47 @@ class AdministrativeService {
     return DemandeAdministrativeReponse.depuis(demande, employe, duree(demande));
   }
 
+  // Consommé par le registre de congés (lien "voir la demande" depuis un mouvement) : même
+  // périmètre de lecture que solde()/mouvements() ci-dessous (Manager sur son équipe, délégué actif
+  // sans restriction).
+  @Transactional(readOnly = true)
+  DemandeAdministrativeReponse trouverDetail(UUID id) {
+    DemandeAdministrative demande = trouver(id);
+    EmployeInfo employe = employe(demande.getEmployeId());
+    verifierPerimetreManagerOuDelegue(employe);
+    return DemandeAdministrativeReponse.depuis(demande, employe, duree(demande));
+  }
+
+  // EF-ADM-14 : lien "voir le justificatif" depuis la liste Demandes/approbation — seul endroit où
+  // une demande conge_maladie est visible (elle ne genere jamais de mouvement de ledger, donc
+  // jamais accessible depuis le registre de congés, contrairement a un conge classique).
+  @Transactional(readOnly = true)
+  JustificatifTelecharge telechargerJustificatif(UUID id) {
+    DemandeAdministrative demande = trouver(id);
+    EmployeInfo employe = employe(demande.getEmployeId());
+    verifierPerimetreManagerOuDelegue(employe);
+    UUID fichierId = demande.getFichierJustificatifId();
+    if (fichierId == null) {
+      throw new JustificatifIntrouvableException(id);
+    }
+    var metadonnees = fileStorageService.recuperer(fichierId);
+    var ressource = fileStorageService.charger(fichierId);
+    return new JustificatifTelecharge(ressource, metadonnees.nomOriginal(), metadonnees.typeMime());
+  }
+
   @Transactional(readOnly = true)
   SoldeCongeReponse solde(UUID employeId) {
     EmployeInfo employe = employe(employeId);
     verifierPerimetreManagerOuDelegue(employe);
-    return new SoldeCongeReponse(employeId, employe.nomComplet(), solde(employe));
+    BigDecimal acquisJours = acquis(employe);
+    BigDecimal mouvementsJours = mouvementRepository.sommeMouvements(employe.id());
+    BigDecimal soldeJours = acquisJours.add(mouvementsJours).setScale(1, RoundingMode.HALF_UP);
+    return new SoldeCongeReponse(
+        employeId,
+        employe.nomComplet(),
+        acquisJours.setScale(1, RoundingMode.HALF_UP),
+        mouvementsJours.setScale(1, RoundingMode.HALF_UP),
+        soldeJours);
   }
 
   @Transactional(readOnly = true)
@@ -266,7 +306,7 @@ class AdministrativeService {
           throw new IllegalArgumentException("Un conge approuve existe deja sur cette date");
         }
       }
-      case document_libre, autre -> {
+      case autre -> {
         if (requete.motif() == null || requete.motif().isBlank()) {
           throw new IllegalArgumentException("Le motif est obligatoire");
         }
@@ -279,7 +319,10 @@ class AdministrativeService {
   // EF-ADM-14 : congés légaux (mariage/naissance/décès/maladie) — juste une période valide,
   // volontairement aucun contrôle de solde ni de période de blocage (contrairement à
   // validerConge()) : ce sont des droits légaux distincts du congé payé, jamais décomptés du
-  // quota. La maladie exige en plus un justificatif déjà téléversé (EF-ADM-14).
+  // quota. Pour la maladie, un justificatif *ou* un motif est exigé (décision produit : le
+  // justificatif seul était trop strict — un employé qui prévient l'Admin par message sans être
+  // passé chez un médecin n'a simplement pas de fichier à fournir, cf. Suivi de session) ; les deux
+  // peuvent coexister, jamais aucun des deux.
   private void validerCongeSpecial(DemandeAdministrativeRequete requete) {
     if (requete.dateDebut() == null) {
       throw new IllegalArgumentException("Une date de debut est requise");
@@ -289,8 +332,10 @@ class AdministrativeService {
       throw new IllegalArgumentException("La date de fin doit etre apres la date de debut");
     }
     if (requete.typeDemande() == TypeDemandeAdministrative.conge_maladie
-        && requete.fichierDocumentLibreId() == null) {
-      throw new IllegalArgumentException("Un justificatif est requis pour un conge maladie");
+        && requete.fichierJustificatifId() == null
+        && (requete.motif() == null || requete.motif().isBlank())) {
+      throw new IllegalArgumentException(
+          "Un justificatif ou un motif est requis pour un conge maladie");
     }
   }
 

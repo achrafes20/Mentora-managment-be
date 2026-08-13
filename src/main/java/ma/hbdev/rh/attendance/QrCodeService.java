@@ -34,6 +34,7 @@ public class QrCodeService {
 
   /** Génère un nouveau QR code pour un employé (révoque le précédent s'il existe). */
   public QrCode generer(UUID employeId) {
+    repository.verrouillerPourEmploye(employeId.toString());
     repository.revoquerTousActifsDe(employeId);
     String valeur = UUID.randomUUID().toString();
     return repository.save(new QrCode(employeId, valeur));

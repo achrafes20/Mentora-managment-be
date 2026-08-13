@@ -245,8 +245,18 @@ class DocumentRhService {
         envoyePar);
   }
 
-  EnvoiDocument envoyerDocumentLibre(UUID employeId, MultipartFile file, UUID envoyePar) {
+  // Corps par défaut affiché comme point de départ éditable côté frontend (même principe que
+  // CORPS_REJET_DEFAUT en recrutement, EF-REC-14) — un Admin peut le personnaliser avant envoi.
+  private static final String CORPS_DOCUMENT_LIBRE_DEFAUT =
+      "Bonjour,\n\nVeuillez trouver un document RH en pièce jointe.\n\nCordialement, RH";
+
+  EnvoiDocument envoyerDocumentLibre(
+      UUID employeId, MultipartFile file, String corpsMessage, UUID envoyePar) {
     EmployeReponse employe = trouverEmploye(employeId);
+    String corps =
+        (corpsMessage != null && !corpsMessage.isBlank())
+            ? corpsMessage
+            : CORPS_DOCUMENT_LIBRE_DEFAUT;
     try {
       return traiterEnvoi(
           employe,
@@ -254,7 +264,7 @@ class DocumentRhService {
           file.getOriginalFilename(),
           TypeDocumentRh.document_libre,
           "Nouveau document RH",
-          "Bonjour,\n\nVeuillez trouver un document RH en pièce jointe.\n\nCordialement, RH",
+          corps,
           envoyePar);
     } catch (Exception e) {
       throw new RuntimeException("Erreur lors de la lecture du fichier", e);
