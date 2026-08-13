@@ -6,9 +6,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -33,6 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -78,7 +81,7 @@ class AdministrativeIntegrationTest {
         """
         truncate table notifications_mattermost, notifications_in_app, journal_audit,
           mouvements_conges, demandes_administratives, jours_feries, periodes_blocage_conges,
-          employes, departements, sessions_utilisateur
+          employes, departements, sessions_utilisateur, fichiers
         cascade
         """);
     // politique_conges (EF-ADM-11) est une donnée de référence seedée par V11, jamais recréée par
@@ -191,6 +194,184 @@ class AdministrativeIntegrationTest {
             BigDecimal.class,
             demandeId);
     org.assertj.core.api.Assertions.assertThat(recredit).isEqualByComparingTo("2");
+  }
+
+  // Consommé par le lien "voir la demande" du registre de congés (frontend) : un mouvement
+  // consommation/recredit porte un demande_id, ce endpoint permet de retrouver le detail complet
+  // sans repasser par la liste paginee.
+  @Test
+  void recupereLeDetailDUneDemandeParIdAvecLeMemePerimetreQueSoldeEtMouvements() throws Exception {
+    LocalDate debut = prochainLundiAuMoins(3);
+    String demandeId =
+        objectMapper
+            .readTree(
+                mockMvc
+                    .perform(
+                        post("/api/demandes-administratives")
+                            .header("Authorization", "Bearer " + managerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(
+                                """
+                                {"employeId":"%s","typeDemande":"conge","granularite":"journee",
+                                 "dateDebut":"%s","dateFin":"%s","motif":"Repos"}
+                                """
+                                    .formatted(employeId, debut, debut)))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .at("/data/id")
+            .asText();
+
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/{id}", demandeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.id").value(demandeId))
+        .andExpect(jsonPath("$.data.typeDemande").value("conge"))
+        .andExpect(jsonPath("$.data.statut").value("en_attente"));
+
+    // Manager gerant reellement l'employe : lecture autorisee (meme perimetre que solde()).
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/{id}", demandeId)
+                .header("Authorization", "Bearer " + managerToken))
+        .andExpect(status().isOk());
+
+    // Manager d'un autre departement : hors perimetre.
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/{id}", demandeId)
+                .header("Authorization", "Bearer " + autreManagerToken))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isNotFound());
+  }
+
+  // Justificatif relache a "justificatif OU motif" (decision produit du 2026-08-13) : un employe
+  // qui previent sans etre passe chez un medecin n'a pas de fichier a fournir.
+  @Test
+  void congeMaladieAcceptePasDeJustificatifSiMotifRenseigne() throws Exception {
+    LocalDate debut = prochainLundiAuMoins(3);
+    mockMvc
+        .perform(
+            post("/api/demandes-administratives")
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"employeId":"%s","typeDemande":"conge_maladie","dateDebut":"%s",
+                     "dateFin":"%s","motif":"Repos a domicile, prevenu par message"}
+                    """
+                        .formatted(employeId, debut, debut)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.statut").value("en_attente"));
+  }
+
+  @Test
+  void congeMaladieRejeteSiNiJustificatifNiMotif() throws Exception {
+    LocalDate debut = prochainLundiAuMoins(3);
+    mockMvc
+        .perform(
+            post("/api/demandes-administratives")
+                .header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"employeId":"%s","typeDemande":"conge_maladie","dateDebut":"%s","dateFin":"%s"}
+                    """
+                        .formatted(employeId, debut, debut)))
+        .andExpect(status().isBadRequest());
+  }
+
+  // Lien "voir le justificatif" depuis Demandes/approbation.
+  @Test
+  void telechargeLeJustificatifDUnCongeMaladieAvecLeMemePerimetreEt404SansFichier()
+      throws Exception {
+    MockMultipartFile fichier =
+        new MockMultipartFile("fichier", "arret.pdf", "application/pdf", "contenu".getBytes());
+    String fichierId =
+        objectMapper
+            .readTree(
+                mockMvc
+                    .perform(
+                        multipart("/api/demandes-administratives/justificatif")
+                            .file(fichier)
+                            .header("Authorization", "Bearer " + managerToken))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .at("/data")
+            .asText();
+
+    LocalDate debut = prochainLundiAuMoins(3);
+    String demandeId =
+        objectMapper
+            .readTree(
+                mockMvc
+                    .perform(
+                        post("/api/demandes-administratives")
+                            .header("Authorization", "Bearer " + managerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(
+                                """
+                                {"employeId":"%s","typeDemande":"conge_maladie","dateDebut":"%s",
+                                 "dateFin":"%s","fichierJustificatifId":"%s"}
+                                """
+                                    .formatted(employeId, debut, debut, fichierId)))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .at("/data/id")
+            .asText();
+
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/{id}/justificatif", demandeId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(content().bytes("contenu".getBytes()));
+
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/{id}/justificatif", demandeId)
+                .header("Authorization", "Bearer " + autreManagerToken))
+        .andExpect(status().isForbidden());
+
+    // Demande sans justificatif (congé classique) : 404, pas d'exception non gérée.
+    String demandeSansFichierId =
+        objectMapper
+            .readTree(
+                mockMvc
+                    .perform(
+                        post("/api/demandes-administratives")
+                            .header("Authorization", "Bearer " + managerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(
+                                """
+                                {"employeId":"%s","typeDemande":"conge","granularite":"journee",
+                                 "dateDebut":"%s","dateFin":"%s","motif":"Repos"}
+                                """
+                                    .formatted(employeId, debut.plusDays(7), debut.plusDays(7))))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .at("/data/id")
+            .asText();
+
+    mockMvc
+        .perform(
+            get("/api/demandes-administratives/{id}/justificatif", demandeSansFichierId)
+                .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isNotFound());
   }
 
   @Test

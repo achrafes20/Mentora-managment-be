@@ -14,4 +14,4 @@ record DemandeAdministrativeRequete(
     LocalTime heureDepart,
     LocalTime heureRetourPrevue,
     String motif,
-    UUID fichierDocumentLibreId) {}
+    UUID fichierJustificatifId) {}

@@ -50,8 +50,8 @@ class DemandeAdministrative {
   @Column(columnDefinition = "TEXT")
   private String motif;
 
-  @Column(name = "fichier_document_libre_id")
-  private UUID fichierDocumentLibreId;
+  @Column(name = "fichier_justificatif_id")
+  private UUID fichierJustificatifId;
 
   @Enumerated(EnumType.STRING)
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -81,7 +81,7 @@ class DemandeAdministrative {
     this.heureDepart = requete.heureDepart();
     this.heureRetourPrevue = requete.heureRetourPrevue();
     this.motif = requete.motif();
-    this.fichierDocumentLibreId = requete.fichierDocumentLibreId();
+    this.fichierJustificatifId = requete.fichierJustificatifId();
     this.creePar = creePar;
   }
 
@@ -139,8 +139,8 @@ class DemandeAdministrative {
     return motif;
   }
 
-  UUID getFichierDocumentLibreId() {
-    return fichierDocumentLibreId;
+  UUID getFichierJustificatifId() {
+    return fichierJustificatifId;
   }
 
   StatutDemandeAdministrative getStatut() {

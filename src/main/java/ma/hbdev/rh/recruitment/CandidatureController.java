@@ -21,7 +21,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /** EF-REC-06/07/09/10/11/12/14. Consultation Admin/Manager (scopée pour le Manager, EF-REC-08). */
 @RestController
@@ -54,6 +56,26 @@ public class CandidatureController {
             .lister(offreId, statut, scoreMin, recherche, pageable)
             .map(CandidatureReponse::depuis);
     return ApiResponse.ok(PagedResponse.of(page));
+  }
+
+  // Candidat reçu au bureau (EF-REC, hors ingestion e-mail) — même pipeline dédup/stockage CV que
+  // l'ingestion, offre optionnelle (cf. CandidatureIngestionService#creerManuellement pour le
+  // raisonnement complet), aucune analyse IA automatique.
+  @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasRole('ADMIN') or @delegationService.estDelegueActif()")
+  @ResponseStatus(HttpStatus.CREATED)
+  public ApiResponse<CandidatureReponse> creerManuellement(
+      @RequestParam String nom,
+      @RequestParam String prenom,
+      @RequestParam String email,
+      @RequestParam(required = false) String telephone,
+      @RequestParam(required = false) UUID offreId,
+      @RequestParam(required = false) String notes,
+      @RequestParam(required = false) MultipartFile cv) {
+    Candidature candidature =
+        candidatureIngestionService.creerManuellement(
+            offreId, nom, prenom, email, telephone, cv, notes);
+    return ApiResponse.ok(CandidatureReponse.depuis(candidature));
   }
 
   @GetMapping("/{id}")
@@ -148,6 +170,16 @@ public class CandidatureController {
   @ExceptionHandler(CandidatureIntrouvableException.class)
   ResponseEntity<ApiResponse<Void>> gererIntrouvable(CandidatureIntrouvableException ex) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(OffreEmploiIntrouvableException.class)
+  ResponseEntity<ApiResponse<Void>> gererOffreIntrouvable(OffreEmploiIntrouvableException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(ex.getMessage()));
+  }
+
+  @ExceptionHandler(CandidatureDejaExistanteException.class)
+  ResponseEntity<ApiResponse<Void>> gererDejaExistante(CandidatureDejaExistanteException ex) {
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
   }
 
   @ExceptionHandler(TransitionCandidatureInvalideException.class)

@@ -71,6 +71,7 @@ class RecruitmentIntegrationTest {
     // candidature_id, cf. schema_v1.sql §6).
     jdbcTemplate.update("DELETE FROM envois_documents");
     jdbcTemplate.update("DELETE FROM candidatures");
+    jdbcTemplate.update("DELETE FROM fichiers");
     jdbcTemplate.update("DELETE FROM offres_emploi");
     jdbcTemplate.update("DELETE FROM departements");
     sessionRepository.deleteAll();
@@ -503,5 +504,78 @@ class RecruitmentIntegrationTest {
                 .header("Authorization", "Bearer " + adminToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data").value(0));
+  }
+
+  // Candidat reçu au bureau (hors ingestion e-mail) : offre optionnelle, statut preselectionne,
+  // aucune analyse IA déclenchée automatiquement.
+  @Test
+  void creationManuelleSansOffreDemarreEnPreselectionneSansAnalyse() throws Exception {
+    mockMvc
+        .perform(
+            multipart("/api/candidatures")
+                .header("Authorization", "Bearer " + adminToken)
+                .param("nom", "Alaoui")
+                .param("prenom", "Salma")
+                .param("email", "salma.alaoui@test.ma")
+                .param("notes", "Passee au bureau, CV papier"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.offreId").doesNotExist())
+        .andExpect(jsonPath("$.data.statut").value("preselectionne"))
+        .andExpect(jsonPath("$.data.source").value("direct"))
+        .andExpect(jsonPath("$.data.derniereAnalyse").doesNotExist());
+  }
+
+  @Test
+  void creationManuelleAvecOffreEtCvPuisRefuseUnDoublonEtUneOffreInconnue() throws Exception {
+    String offreId = creerOffre("Comptable", List.of("Excel"));
+    MockMultipartFile cv =
+        new MockMultipartFile("cv", "cv.pdf", "application/pdf", "contenu".getBytes());
+
+    mockMvc
+        .perform(
+            multipart("/api/candidatures")
+                .file(cv)
+                .header("Authorization", "Bearer " + adminToken)
+                .param("nom", "Bennani")
+                .param("prenom", "Omar")
+                .param("email", "omar.bennani@test.ma")
+                .param("offreId", offreId))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.offreId").value(offreId))
+        .andExpect(jsonPath("$.data.statut").value("preselectionne"));
+
+    // Meme e-mail sur la meme offre : refuse plutot que de fusionner silencieusement (contrairement
+    // a l'ingestion e-mail, une saisie manuelle est un geste actif et doit echouer clairement).
+    mockMvc
+        .perform(
+            multipart("/api/candidatures")
+                .header("Authorization", "Bearer " + adminToken)
+                .param("nom", "Bennani")
+                .param("prenom", "Omar")
+                .param("email", "omar.bennani@test.ma")
+                .param("offreId", offreId))
+        .andExpect(status().isConflict());
+
+    mockMvc
+        .perform(
+            multipart("/api/candidatures")
+                .header("Authorization", "Bearer " + adminToken)
+                .param("nom", "Test")
+                .param("prenom", "Inconnue")
+                .param("email", "inconnue@test.ma")
+                .param("offreId", UUID.randomUUID().toString()))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void creationManuelleRefuseeAuManager() throws Exception {
+    mockMvc
+        .perform(
+            multipart("/api/candidatures")
+                .header("Authorization", "Bearer " + managerToken)
+                .param("nom", "Test")
+                .param("prenom", "Manager")
+                .param("email", "test.manager@test.ma"))
+        .andExpect(status().isForbidden());
   }
 }
