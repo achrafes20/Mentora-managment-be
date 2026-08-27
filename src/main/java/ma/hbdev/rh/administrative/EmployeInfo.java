@@ -10,7 +10,8 @@ record EmployeInfo(
     UUID managerId,
     LocalDate dateEmbauche,
     String typeContrat,
-    String statut) {
+    String statut,
+    String email) {
   String nomComplet() {
     return (prenom == null ? "" : prenom + " ") + nom;
   }

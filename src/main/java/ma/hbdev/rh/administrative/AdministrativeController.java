@@ -149,6 +149,19 @@ class AdministrativeController {
     return ApiResponse.ok(service.mouvements(employeId));
   }
 
+  @GetMapping("/employes/{employeId}/mouvements/export")
+  ResponseEntity<byte[]> exporterRegistre(
+      @PathVariable UUID employeId, @RequestParam FormatExport format) {
+    byte[] contenu = service.exporterRegistre(employeId, format);
+    String nomFichier = "registre_conges_" + employeId + "_" + LocalDate.now() + format.extension();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(format.typeMime()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(nomFichier).build().toString())
+        .body(contenu);
+  }
+
   @GetMapping("/jours-feries")
   ApiResponse<List<JourFerieReponse>> joursFeries() {
     return ApiResponse.ok(jourFerieService.lister());

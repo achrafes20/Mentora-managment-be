@@ -72,7 +72,7 @@ Comment les secrets sont provisionnés selon l'environnement :
 | `SPRING_DATASOURCE_PASSWORD` | **[SECRET]** | |
 | `JWT_SECRET` | **[SECRET]** | Min. 64 caractères, propre à chaque environnement. |
 | `JWT_EXPIRATION_MS` | Non | Défaut `86400000` (24h). |
-| `APP_BASE_URL` | **Oui** | URL publique du frontend. Sert aux liens de réinitialisation de mot de passe et au lien de révocation d'appareil personnel envoyé dans l'e-mail de code de pointage mobile (EF-ATT-19). |
+| `APP_BASE_URL` | **Oui** | URL publique du frontend. Sert aux liens de réinitialisation de mot de passe, au lien de révocation d'appareil personnel envoyé dans l'e-mail de code de pointage mobile (EF-ATT-19), et à la valeur encodée dans le QR badge de la fiche employé (lien direct vers la fiche, cf. EF-ATT-01). |
 | `API_BASE_URL` | **Oui** | URL publique de l'API. Sert aux liens de téléchargement de documents. En prod, identique à `APP_BASE_URL`. |
 | `CORS_ALLOWED_ORIGINS` | **Oui** | Origines autorisées, séparées par des virgules. |
 | `FILE_STORAGE_PATH` | **Oui** | Doit pointer sur un volume persistant (§7). Défaut `./data/uploads`. |

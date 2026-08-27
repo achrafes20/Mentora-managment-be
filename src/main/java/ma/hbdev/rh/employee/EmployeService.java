@@ -90,18 +90,20 @@ public class EmployeService {
       StatutActifInactif statut,
       String recherche,
       Pageable pageable) {
-    UUID departementIdEffectif = departementId;
+    // EF-AUTH-03 : le périmètre Manager est per-employé (employes.manager_id), comme partout
+    // ailleurs dans l'app (Présence, Demandes/congés — cf. AdministrativeService
+    // #verifierPerimetreManager) — pas departements.manager_id (headship du département, notion
+    // distincte réservée au Tableau de bord Manager, cf. DashboardService). Le managerId passé en
+    // paramètre est ignoré et remplacé par l'identité courante : un Manager ne doit jamais pouvoir
+    // lister l'équipe d'un autre Manager en manipulant ce filtre.
+    UUID managerIdEffectif = managerId;
     if (CurrentUser.hasRole("MANAGER")) {
-      UUID departementGere = departementGereParManagerCourant();
-      if (departementGere == null
-          || (departementId != null && !departementId.equals(departementGere))) {
-        return Page.empty(pageable);
-      }
-      departementIdEffectif = departementGere;
+      managerIdEffectif =
+          CurrentUser.id().orElseThrow(() -> new AccessDeniedException("Non authentifié"));
     }
     var specification =
         EmployeSpecifications.filtrer(
-            departementIdEffectif, managerId, typeContrat, statut, blancVersNull(recherche));
+            departementId, managerIdEffectif, typeContrat, statut, blancVersNull(recherche));
     return employeRepository.findAll(specification, pageable);
   }
 
@@ -120,21 +122,17 @@ public class EmployeService {
     return EmployeReponse.depuis(trouver(id));
   }
 
-  // EF-AUTH-03 : le Manager n'a accès en lecture qu'aux employés de son propre département.
+  // EF-AUTH-03 : le Manager n'a accès en lecture qu'à ses propres rattachés (employes.manager_id),
+  // même mécanisme que lister() ci-dessus.
   private void verifierPerimetreManager(Employe employe) {
     if (!CurrentUser.hasRole("MANAGER")) {
       return;
     }
-    UUID departementGere = departementGereParManagerCourant();
-    if (departementGere == null || !departementGere.equals(employe.getDepartement().getId())) {
-      throw new AccessDeniedException("Employé hors du périmètre du Manager");
-    }
-  }
-
-  private UUID departementGereParManagerCourant() {
     UUID managerId =
         CurrentUser.id().orElseThrow(() -> new AccessDeniedException("Non authentifié"));
-    return departementRepository.findByManagerId(managerId).map(Departement::getId).orElse(null);
+    if (!managerId.equals(employe.getManagerId())) {
+      throw new AccessDeniedException("Employé hors du périmètre du Manager");
+    }
   }
 
   Employe creer(EmployeRequete requete) {
@@ -183,6 +181,73 @@ public class EmployeService {
               employe.getId(), requete.cvFichierId(), "CV", CurrentUser.id().orElse(null)));
     }
     return employe;
+  }
+
+  /**
+   * EF-EMP-18 : un Manager est aussi un employé — crée sa fiche RH en même temps que son compte de
+   * connexion (cf. {@code auth.UserService#create}) et la lie formellement via {@code
+   * utilisateur_id}. Signature en types primitifs (pas {@link EmployeRequete} ni {@link
+   * TypeContratEmploye}, tous les deux non publics) : c'est la seule façon pour le module {@code
+   * auth} de déclencher une création sans importer d'entité/enum interne à ce module, convention
+   * déjà suivie par {@code document.DocumentRhService} pour ses propres appels à ce service.
+   */
+  @Transactional
+  public EmployeReponse creerPourUtilisateur(
+      String nom,
+      String prenom,
+      String email,
+      UUID departementId,
+      String poste,
+      String typeContrat,
+      LocalDate dateEmbauche,
+      UUID utilisateurId) {
+    TypeContratEmploye type;
+    try {
+      type = TypeContratEmploye.valueOf(typeContrat);
+    } catch (IllegalArgumentException | NullPointerException e) {
+      throw new IllegalArgumentException("Type de contrat invalide : " + typeContrat);
+    }
+    if (poste == null || poste.isBlank()) {
+      throw new IllegalArgumentException("Le poste est obligatoire");
+    }
+    EmployeRequete requete =
+        new EmployeRequete(
+            nom,
+            prenom,
+            email,
+            null,
+            poste,
+            departementId,
+            null,
+            dateEmbauche,
+            type,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    Employe employe = creer(requete);
+    employe.definirUtilisateurId(utilisateurId);
+    // EF-EMP-18 : si le département n'a pas encore de responsable, ce nouveau Manager le devient
+    // automatiquement — utilisé pour l'affichage "responsable" de Départements et comme repli de
+    // destinataire d'événement (cf. creer() ci-dessus, employe.getManagerId() ?: departement
+    // .getManagerId()) quand un employé n'a pas encore de manager direct assigné. Le périmètre
+    // d'accès Manager (Employés, Tableau de bord, Présence, Demandes) reste lui basé sur
+    // employes.manager_id (assignation par employé, cf. verifierPerimetreManager ci-dessus), pas
+    // sur ce champ. Ne jamais écraser un responsable déjà en place (un département peut avoir un
+    // employé RH sans en être le responsable — les deux notions restent distinctes).
+    departementRepository
+        .findById(departementId)
+        .filter(d -> d.getManagerId() == null)
+        .ifPresent(d -> d.setManagerId(utilisateurId));
+    return EmployeReponse.depuis(employe);
   }
 
   Employe modifier(UUID id, EmployeModificationRequete requete) {

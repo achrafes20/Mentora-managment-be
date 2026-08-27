@@ -17,6 +17,7 @@ import ma.hbdev.rh.shared.export.FormatExport;
 import ma.hbdev.rh.shared.export.FormatageExport;
 import ma.hbdev.rh.shared.export.TableauExportService;
 import ma.hbdev.rh.shared.file.FileStorageService;
+import ma.hbdev.rh.shared.mail.MailService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -78,6 +79,7 @@ class AdministrativeService {
   private final DelegationService delegationService;
   private final TableauExportService tableauExportService;
   private final FileStorageService fileStorageService;
+  private final MailService mailService;
 
   AdministrativeService(
       DemandeAdministrativeRepository demandeRepository,
@@ -89,7 +91,8 @@ class AdministrativeService {
       ApplicationEventPublisher evenements,
       DelegationService delegationService,
       TableauExportService tableauExportService,
-      FileStorageService fileStorageService) {
+      FileStorageService fileStorageService,
+      MailService mailService) {
     this.demandeRepository = demandeRepository;
     this.mouvementRepository = mouvementRepository;
     this.jourFerieRepository = jourFerieRepository;
@@ -100,6 +103,7 @@ class AdministrativeService {
     this.delegationService = delegationService;
     this.tableauExportService = tableauExportService;
     this.fileStorageService = fileStorageService;
+    this.mailService = mailService;
   }
 
   @Transactional(readOnly = true)
@@ -188,6 +192,12 @@ class AdministrativeService {
     evenements.publishEvent(
         new DemandeAdministrativeEvent(
             demande.getId(), "approbation", employe.managerId(), employe.nomComplet()));
+    // demande_document : pas d'e-mail de decision ici, l'envoi du document lui-meme (qui declenche
+    // cette approbation, cf. DemandesPage#EnvoyerDocumentModal) tient deja lieu de notification —
+    // un e-mail generique en plus serait redondant avec le document recu au meme moment.
+    if (demande.getTypeDemande() != TypeDemandeAdministrative.demande_document) {
+      envoyerEmailDecision(employe, demande, true);
+    }
     return DemandeAdministrativeReponse.depuis(demande, employe, duree(demande));
   }
 
@@ -202,7 +212,49 @@ class AdministrativeService {
     evenements.publishEvent(
         new DemandeAdministrativeEvent(
             demande.getId(), "rejet", employe.managerId(), employe.nomComplet()));
+    envoyerEmailDecision(employe, demande, false);
     return DemandeAdministrativeReponse.depuis(demande, employe, duree(demande));
+  }
+
+  // Notification employe (pas seulement Manager via DemandeAdministrativeEvent, cf. ci-dessus) —
+  // seul canal aujourd'hui, les employes n'ayant pas de compte dans l'application. Degradation
+  // gracieuse assuree par MailService#sendEmail lui-meme (log + pas d'exception si le webhook n8n
+  // est indisponible) : une decision reste valide meme si l'e-mail echoue.
+  private void envoyerEmailDecision(
+      EmployeInfo employe, DemandeAdministrative demande, boolean approuvee) {
+    if (employe.email() == null || employe.email().isBlank()) {
+      return;
+    }
+    String sujet = approuvee ? "Votre demande a ete approuvee" : "Votre demande a ete rejetee";
+    StringBuilder corps = new StringBuilder("Bonjour ").append(employe.prenom()).append(",\n\n");
+    corps
+        .append("Votre demande (")
+        .append(libelleTypeDemande(demande.getTypeDemande()))
+        .append(")");
+    if (demande.getDateDebut() != null) {
+      corps.append(" du ").append(demande.getDateDebut());
+      if (demande.getDateFin() != null && !demande.getDateFin().equals(demande.getDateDebut())) {
+        corps.append(" au ").append(demande.getDateFin());
+      }
+    }
+    corps
+        .append(" a ete ")
+        .append(approuvee ? "approuvee" : "rejetee")
+        .append(".\n\nCordialement,\nRH");
+    mailService.sendEmail(employe.email(), sujet, corps.toString());
+  }
+
+  private static String libelleTypeDemande(TypeDemandeAdministrative type) {
+    return switch (type) {
+      case conge -> "Congé payé";
+      case bon_sortie -> "Bon de sortie";
+      case autre -> "Autre";
+      case conge_mariage -> "Congé mariage";
+      case conge_naissance -> "Congé naissance";
+      case conge_deces -> "Congé décès";
+      case conge_maladie -> "Congé maladie";
+      case demande_document -> "Demande de document";
+    };
   }
 
   DemandeAdministrativeReponse annuler(UUID id) {
@@ -210,6 +262,14 @@ class AdministrativeService {
     verifierAdminOuDelegue();
     if (demande.getStatut() != StatutDemandeAdministrative.approuvee) {
       throw new IllegalArgumentException("Seule une demande approuvee peut etre annulee");
+    }
+    // Une fois le jour de depart arrive, le conge/bon de sortie est considere comme engage : on ne
+    // peut plus faire comme s'il n'avait jamais eu lieu (l'employe peut deja etre absent). Types
+    // sans date de debut (autre, demande_document) : aucune restriction, la notion de "jour de
+    // depart" ne s'y applique pas.
+    if (demande.getDateDebut() != null && !demande.getDateDebut().isAfter(LocalDate.now())) {
+      throw new IllegalArgumentException(
+          "Impossible d'annuler une demande dont le jour de depart est atteint ou passe");
     }
     EmployeInfo employe = employe(demande.getEmployeId());
     if (demande.getTypeDemande() == TypeDemandeAdministrative.conge
@@ -282,6 +342,53 @@ class AdministrativeService {
         .toList();
   }
 
+  // Registre des congés d'un employé — mêmes colonnes que le tableau frontend (DemandesPage,
+  // onglet Registre), qui montre le statut/la période/le motif de la demande liée plutôt que le
+  // type de mouvement brut (moins parlant pour une lecture hors application, ex. dossier RH).
+  private static final List<String> ENTETES_EXPORT_REGISTRE =
+      List.of("Date", "Quantité (j)", "Statut de la demande", "Période", "Motif");
+
+  @Transactional(readOnly = true)
+  byte[] exporterRegistre(UUID employeId, FormatExport format) {
+    EmployeInfo employe = employe(employeId);
+    verifierPerimetreManagerOuDelegue(employe);
+    List<MouvementCongeAdm> mouvements =
+        mouvementRepository.findByEmployeIdOrderByDateMouvementDescCreeLeDesc(employeId);
+    Map<UUID, DemandeAdministrative> demandes =
+        demandeRepository
+            .findAllById(
+                mouvements.stream()
+                    .map(MouvementCongeAdm::getDemandeId)
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .toList())
+            .stream()
+            .collect(Collectors.toMap(DemandeAdministrative::getId, d -> d));
+    List<List<String>> lignes =
+        mouvements.stream().map(m -> ligneExportRegistre(m, demandes)).toList();
+    return tableauExportService.generer(
+        format, "Registre conges - " + employe.nomComplet(), ENTETES_EXPORT_REGISTRE, lignes);
+  }
+
+  private static List<String> ligneExportRegistre(
+      MouvementCongeAdm mouvement, Map<UUID, DemandeAdministrative> demandes) {
+    DemandeAdministrative demande =
+        mouvement.getDemandeId() == null ? null : demandes.get(mouvement.getDemandeId());
+    String periode = "";
+    if (demande != null) {
+      periode = texte(demande.getDateDebut());
+      if (demande.getDateFin() != null && !demande.getDateFin().equals(demande.getDateDebut())) {
+        periode += " -> " + demande.getDateFin();
+      }
+    }
+    return List.of(
+        texte(mouvement.getDateMouvement()),
+        mouvement.getQuantiteJours().toString(),
+        demande == null ? "" : demande.getStatut().name(),
+        periode,
+        demande == null ? "" : texte(demande.getMotif()));
+  }
+
   private void valider(DemandeAdministrativeRequete requete, EmployeInfo employe) {
     if (!"actif".equals(employe.statut())) {
       throw new IllegalArgumentException("L'employe doit etre actif");
@@ -306,7 +413,7 @@ class AdministrativeService {
           throw new IllegalArgumentException("Un conge approuve existe deja sur cette date");
         }
       }
-      case autre -> {
+      case autre, demande_document -> {
         if (requete.motif() == null || requete.motif().isBlank()) {
           throw new IllegalArgumentException("Le motif est obligatoire");
         }
@@ -449,12 +556,13 @@ class AdministrativeService {
               rs.getObject("manager_id", UUID.class),
               rs.getObject("date_embauche", LocalDate.class),
               rs.getString("type_contrat"),
-              rs.getString("statut"));
+              rs.getString("statut"),
+              rs.getString("email"));
 
   private EmployeInfo employe(UUID id) {
     return jdbcTemplate.queryForObject(
         """
-        select id, nom, prenom, manager_id, date_embauche, type_contrat::text, statut::text
+        select id, nom, prenom, manager_id, date_embauche, type_contrat::text, statut::text, email
         from employes where id = ?
         """,
         MAPPEUR_EMPLOYE_INFO,
@@ -473,8 +581,8 @@ class AdministrativeService {
     String placeholders = distincts.stream().map(id -> "?").collect(Collectors.joining(","));
     List<EmployeInfo> employes =
         jdbcTemplate.query(
-            "select id, nom, prenom, manager_id, date_embauche, type_contrat::text, statut::text "
-                + "from employes where id in ("
+            "select id, nom, prenom, manager_id, date_embauche, type_contrat::text, statut::text, "
+                + "email from employes where id in ("
                 + placeholders
                 + ")",
             MAPPEUR_EMPLOYE_INFO,

@@ -116,6 +116,11 @@ class Employe {
   @Column(name = "salaire_brut_mensuel")
   private java.math.BigDecimal salaireBrutMensuel;
 
+  // EF-EMP-18 : lien vers le compte de connexion correspondant, uniquement renseigné pour les
+  // fiches créées via UserService#create (Manager) — un employé ordinaire n'a pas de compte.
+  @Column(name = "utilisateur_id")
+  private UUID utilisateurId;
+
   @Column(name = "cree_le", insertable = false, updatable = false)
   private Instant creeLe;
 
@@ -208,6 +213,12 @@ class Employe {
   // definirSujetStage (setter dédié plutôt qu'un 21e paramètre dans modifier()).
   void definirSalaireBrutMensuel(java.math.BigDecimal salaireBrutMensuel) {
     this.salaireBrutMensuel = salaireBrutMensuel;
+  }
+
+  // EF-EMP-18 : posé une seule fois à la création (cf. EmployeService#creerPourUtilisateur),
+  // jamais modifié ensuite.
+  void definirUtilisateurId(UUID utilisateurId) {
+    this.utilisateurId = utilisateurId;
   }
 
   void transferer(Departement nouveauDepartement, UUID nouveauManagerId) {
@@ -331,6 +342,10 @@ class Employe {
 
   java.math.BigDecimal getSalaireBrutMensuel() {
     return salaireBrutMensuel;
+  }
+
+  UUID getUtilisateurId() {
+    return utilisateurId;
   }
 
   Instant getCreeLe() {

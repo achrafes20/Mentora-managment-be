@@ -31,7 +31,11 @@ class EmployeImportProcessor {
   }
 
   ImportLigneResultat traiter(
-      int numeroLigne, Map<String, String> donnees, boolean dryRun, ImportSuiviLot suivi) {
+      int numeroLigne,
+      Map<String, String> donnees,
+      boolean dryRun,
+      ImportSuiviLot suivi,
+      StrategieDoublon strategieDoublon) {
     List<String> erreurs = new ArrayList<>();
 
     String nom = valeur(donnees, "nom");
@@ -106,39 +110,40 @@ class EmployeImportProcessor {
     try {
       var existant = sansEmail ? null : employeRepository.findByEmailIgnoreCase(email).orElse(null);
       if (existant == null) {
-        UUID entiteId = null;
-        if (!dryRun) {
-          entiteId =
-              employeService
-                  .creer(
-                      new EmployeRequete(
-                          nom,
-                          prenom,
-                          email,
-                          telephone,
-                          poste,
-                          departement.getId(),
-                          null,
-                          dateEmbauche,
-                          typeContrat,
-                          dateFinContratPrevue,
-                          // EF-DOC-12 : date de fin de stage pas encore un champ mappé par
-                          // l'assistant d'import (T2.B1) — hors périmètre de ce correctif.
-                          null,
-                          null,
-                          null,
-                          // Sexe/CIN/sujet de stage/conformité RH Maroc : idem, pas encore des
-                          // champs mappés par l'assistant d'import.
-                          null,
-                          null,
-                          null,
-                          null,
-                          null,
-                          null,
-                          null,
-                          null))
-                  .getId();
-        }
+        // dryRun toujours exécuté (pas seulement le vrai import) : la ligne appelle réellement
+        // EmployeService#creer pour bénéficier des mêmes règles de validation qu'un import réel —
+        // la transaction (REQUIRES_NEW, cf. ImportService#traiterLigneIsolee) est systématiquement
+        // annulée après coup quand dryRun est vrai, donc rien n'est jamais persisté en simulation.
+        UUID entiteId =
+            employeService
+                .creer(
+                    new EmployeRequete(
+                        nom,
+                        prenom,
+                        email,
+                        telephone,
+                        poste,
+                        departement.getId(),
+                        null,
+                        dateEmbauche,
+                        typeContrat,
+                        dateFinContratPrevue,
+                        // EF-DOC-12 : date de fin de stage pas encore un champ mappé par
+                        // l'assistant d'import (T2.B1) — hors périmètre de ce correctif.
+                        null,
+                        null,
+                        null,
+                        // Sexe/CIN/sujet de stage/conformité RH Maroc : idem, pas encore des
+                        // champs mappés par l'assistant d'import.
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null))
+                .getId();
         StatutLigneImport statut =
             sansEmail ? StatutLigneImport.AVERTISSEMENT : StatutLigneImport.VALIDE;
         List<String> avertissements =
@@ -151,33 +156,42 @@ class EmployeImportProcessor {
       }
 
       UUID entiteId = existant.getId();
-      if (!dryRun) {
-        employeService.modifier(
+      if (strategieDoublon == StrategieDoublon.IGNORER) {
+        return new ImportLigneResultat(
+            numeroLigne,
+            StatutLigneImport.AVERTISSEMENT,
+            ActionLigneImport.IGNOREE,
+            donnees,
+            List.of("Employé déjà existant (e-mail) — ligne ignorée, fiche existante conservée"),
+            entiteId);
+      }
+      // cf. commentaire ci-dessus : dryRun exécute aussi la mise à jour réelle, transaction annulée
+      // après coup.
+      employeService.modifier(
+          entiteId,
+          new EmployeModificationRequete(
+              nom,
+              prenom,
+              email,
+              telephone,
+              poste,
+              dateEmbauche,
+              typeContrat,
+              dateFinContratPrevue,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null));
+      if (!existant.getDepartement().getId().equals(departement.getId())) {
+        employeService.transferer(
             entiteId,
-            new EmployeModificationRequete(
-                nom,
-                prenom,
-                email,
-                telephone,
-                poste,
-                dateEmbauche,
-                typeContrat,
-                dateFinContratPrevue,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null));
-        if (!existant.getDepartement().getId().equals(departement.getId())) {
-          employeService.transferer(
-              entiteId,
-              new TransfertRequete(departement.getId(), existant.getManagerId(), LocalDate.now()),
-              CurrentUser.id().orElse(null));
-        }
+            new TransfertRequete(departement.getId(), existant.getManagerId(), LocalDate.now()),
+            CurrentUser.id().orElse(null));
       }
       return new ImportLigneResultat(
           numeroLigne,

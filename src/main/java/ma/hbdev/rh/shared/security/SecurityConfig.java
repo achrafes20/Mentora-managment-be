@@ -51,7 +51,6 @@ public class SecurityConfig {
     "/api/kiosque/revoquer-perte",
     "/api/kiosque/activation/statut",
     "/api/kiosque/activation/verifier",
-    "/api/fichiers/**",
     // Appelé par n8n (jamais par un utilisateur connecté) — protégé par InternalWebhookGuard
     // (secret partagé en en-tête), pas par une session JWT. EF-REC-02.
     "/api/recruitment/ingest",

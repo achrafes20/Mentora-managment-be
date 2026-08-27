@@ -27,9 +27,9 @@ public class DashboardService {
    */
   @Transactional(readOnly = true)
   public DashboardStatsReponse statsAdmin() {
-    long employesActifs = countEmployesActifs(null);
-    long demandesEnAttente = countDemandesEnAttente(null);
-    long anomaliesDuJour = countAnomaliesDuJour(null);
+    long employesActifs = countEmployesActifs();
+    long demandesEnAttente = countDemandesEnAttente();
+    long anomaliesDuJour = countAnomaliesDuJour();
     List<RepartitionDepartement> repartition = repartitionParDepartement();
     long candidaturesEnCours = countCandidaturesEnCours();
     long finContratDans7Jours = countFinContratDans7Jours();
@@ -44,23 +44,20 @@ public class DashboardService {
   }
 
   /**
-   * EF-DASH-02 : vue Manager restreinte à son département.
+   * EF-DASH-02 : vue Manager restreinte à son équipe.
+   *
+   * <p>Périmètre per-employé (employes.manager_id), même mécanisme que partout ailleurs dans l'app
+   * (Présence, Demandes/congés) — pas departements.manager_id (headship du département, notion
+   * distincte qui peut rester non-assignée sans que ça reflète l'équipe réelle du Manager).
    *
    * @param managerId id de l'utilisateur Manager
-   * @return agrégats restreints au département géré par ce Manager
+   * @return agrégats restreints à l'équipe de ce Manager
    */
   @Transactional(readOnly = true)
   public DashboardStatsReponse statsManager(UUID managerId) {
-    // Résoudre le département géré par ce Manager
-    UUID departementId = resoudreDepartementManager(managerId);
-    if (departementId == null) {
-      // Manager sans département rattaché → compteurs à 0
-      return new DashboardStatsReponse(0L, 0L, 0L, null, null, null);
-    }
-
-    long employesActifs = countEmployesActifsDansDepartement(departementId);
-    long demandesEnAttente = countDemandesEnAttenteParDepartement(departementId);
-    long anomaliesDuJour = countAnomaliesDuJourParDepartement(departementId);
+    long employesActifs = countEmployesActifsDeLequipe(managerId);
+    long demandesEnAttente = countDemandesEnAttenteDeLequipe(managerId);
+    long anomaliesDuJour = countAnomaliesDuJourDeLequipe(managerId);
 
     return new DashboardStatsReponse(
         employesActifs, demandesEnAttente, anomaliesDuJour, null, null, null);
@@ -70,19 +67,13 @@ public class DashboardService {
   // Méthodes privées — Admin scope (global)
   // ────────────────────────────────────────────────
 
-  private long countEmployesActifs(UUID departementId) {
-    if (departementId != null) {
-      return countEmployesActifsDansDepartement(departementId);
-    }
+  private long countEmployesActifs() {
     Long count =
         jdbc.queryForObject("SELECT COUNT(*) FROM employes WHERE statut = 'actif'", Long.class);
     return count != null ? count : 0L;
   }
 
-  private long countDemandesEnAttente(UUID departementId) {
-    if (departementId != null) {
-      return countDemandesEnAttenteParDepartement(departementId);
-    }
+  private long countDemandesEnAttente() {
     Long count =
         jdbc.queryForObject(
             "SELECT COUNT(*) FROM demandes_administratives WHERE statut = 'en_attente'",
@@ -90,10 +81,7 @@ public class DashboardService {
     return count != null ? count : 0L;
   }
 
-  private long countAnomaliesDuJour(UUID departementId) {
-    if (departementId != null) {
-      return countAnomaliesDuJourParDepartement(departementId);
-    }
+  private long countAnomaliesDuJour() {
     Long count =
         jdbc.queryForObject(
             "SELECT COUNT(*) FROM anomalies_pointage WHERE resolue = false AND date_pointage = ?",
@@ -148,56 +136,43 @@ public class DashboardService {
   }
 
   // ────────────────────────────────────────────────
-  // Méthodes privées — Manager scope (département)
+  // Méthodes privées — Manager scope (équipe, employes.manager_id)
   // ────────────────────────────────────────────────
 
-  private UUID resoudreDepartementManager(UUID managerId) {
-    try {
-      String idStr =
-          jdbc.queryForObject(
-              "SELECT id::text FROM departements WHERE manager_id = ?::uuid AND statut = 'actif'",
-              String.class,
-              managerId.toString());
-      return idStr != null ? UUID.fromString(idStr) : null;
-    } catch (org.springframework.dao.EmptyResultDataAccessException e) {
-      return null;
-    }
-  }
-
-  private long countEmployesActifsDansDepartement(UUID departementId) {
+  private long countEmployesActifsDeLequipe(UUID managerId) {
     Long count =
         jdbc.queryForObject(
-            "SELECT COUNT(*) FROM employes WHERE statut = 'actif' AND departement_id = ?::uuid",
+            "SELECT COUNT(*) FROM employes WHERE statut = 'actif' AND manager_id = ?::uuid",
             Long.class,
-            departementId.toString());
+            managerId.toString());
     return count != null ? count : 0L;
   }
 
-  private long countDemandesEnAttenteParDepartement(UUID departementId) {
+  private long countDemandesEnAttenteDeLequipe(UUID managerId) {
     Long count =
         jdbc.queryForObject(
             """
             SELECT COUNT(*) FROM demandes_administratives da
             JOIN employes e ON e.id = da.employe_id
-            WHERE da.statut = 'en_attente' AND e.departement_id = ?::uuid
+            WHERE da.statut = 'en_attente' AND e.manager_id = ?::uuid
             """,
             Long.class,
-            departementId.toString());
+            managerId.toString());
     return count != null ? count : 0L;
   }
 
-  private long countAnomaliesDuJourParDepartement(UUID departementId) {
+  private long countAnomaliesDuJourDeLequipe(UUID managerId) {
     Long count =
         jdbc.queryForObject(
             """
             SELECT COUNT(*) FROM anomalies_pointage ap
             JOIN employes e ON e.id = ap.employe_id
             WHERE ap.resolue = false AND ap.date_pointage = ?
-              AND e.departement_id = ?::uuid
+              AND e.manager_id = ?::uuid
             """,
             Long.class,
             LocalDate.now(),
-            departementId.toString());
+            managerId.toString());
     return count != null ? count : 0L;
   }
 }

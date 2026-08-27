@@ -67,6 +67,7 @@ class EmployeIntegrationTest {
   private UUID autreDepartementId;
   private String adminToken;
   private String managerToken;
+  private UUID managerId;
 
   @BeforeEach
   void authentifierEtCreerDepartements() throws Exception {
@@ -99,6 +100,7 @@ class EmployeIntegrationTest {
     manager.setNom("Dupont");
     manager.setPrenom("Jean");
     manager = userRepository.save(manager);
+    managerId = manager.getId();
 
     adminToken = login("admin@hbdev.ma", "AdminPass@2025");
     managerToken = login("manager@hbdev.ma", "ManagerPass@2025");
@@ -159,6 +161,20 @@ class EmployeIntegrationTest {
             cibleDepartementId,
             typeContrat,
             dateFinContratPrevue == null ? "null" : "\"" + dateFinContratPrevue + "\"");
+  }
+
+  // EF-AUTH-03 : depuis l'unification du périmètre Manager sur employes.manager_id (fini l'ancien
+  // departements.manager_id, incohérent avec le reste de l'app — Présence, Demandes/congés),
+  // "appartenir à l'équipe du Manager de test" exige que l'employé créé porte explicitement ce
+  // managerId, pas seulement le bon departementId.
+  private String requeteCreationAvecManager(
+      String email, String typeContrat, UUID managerIdEmploye) {
+    return """
+        {"nom":"Dupont","prenom":"Jean","email":"%s","telephone":"0600000000","poste":"Dev",
+         "departementId":"%s","managerId":"%s","dateEmbauche":"2024-01-15","typeContrat":"%s",
+         "dateFinContratPrevue":null}
+        """
+        .formatted(email, departementId, managerIdEmploye, typeContrat);
   }
 
   private String requeteCreationAvecFinStage(
@@ -588,7 +604,7 @@ class EmployeIntegrationTest {
                 post("/api/employes")
                     .header("Authorization", "Bearer " + adminToken)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(requeteCreation("equipe@test.ma", "CDI", null)))
+                    .content(requeteCreationAvecManager("equipe@test.ma", "CDI", managerId)))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -696,7 +712,7 @@ class EmployeIntegrationTest {
         post("/api/employes")
             .header("Authorization", "Bearer " + adminToken)
             .contentType(MediaType.APPLICATION_JSON)
-            .content(requeteCreation("equipe.export@test.ma", "CDI", null)));
+            .content(requeteCreationAvecManager("equipe.export@test.ma", "CDI", managerId)));
     mockMvc.perform(
         post("/api/employes")
             .header("Authorization", "Bearer " + adminToken)

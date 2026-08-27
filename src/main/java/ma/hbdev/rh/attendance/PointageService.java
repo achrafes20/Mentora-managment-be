@@ -18,7 +18,6 @@ import ma.hbdev.rh.shared.export.TableauExportService;
 import ma.hbdev.rh.shared.security.CurrentUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
@@ -106,16 +105,19 @@ public class PointageService {
   }
 
   /**
-   * EF-ATT-17 : historique perso affiché sur /pointage-mobile — rassure l'employé qu'il n'a pas
-   * oublié de pointer. Identité déjà prouvée par l'appairage de l'appareil (appelant), donc pas de
-   * périmètre Manager à appliquer ici (contrairement à lister()) — un employé ne voit que le sien.
+   * EF-ATT-17 : historique perso affiché sur /pointage-mobile, paginé — rassure l'employé qu'il n'a
+   * pas oublié de pointer. Identité déjà prouvée par l'appairage de l'appareil (appelant), donc pas
+   * de périmètre Manager à appliquer ici (contrairement à lister()) — un employé ne voit que le
+   * sien. {@code typeFiltre} nul : pas de filtre (Entrée + Sortie).
    */
   @Transactional(readOnly = true)
-  public List<PointageReponse> pointagesRecents(UUID employeId, int limite) {
-    return pointageRepository
-        .findByEmployeId(employeId, PageRequest.of(0, limite))
-        .map(PointageReponse::depuis)
-        .getContent();
+  public Page<PointageReponse> pointagesRecents(
+      UUID employeId, Pageable pageable, TypeScanPointage typeFiltre) {
+    Page<Pointage> page =
+        typeFiltre == null
+            ? pointageRepository.findByEmployeId(employeId, pageable)
+            : pointageRepository.findByEmployeIdAndTypeScan(employeId, typeFiltre, pageable);
+    return page.map(PointageReponse::depuis);
   }
 
   Pointage scannerPourEmploye(UUID employeId, UUID qrCodeId, TypeScanPointage typeScan) {

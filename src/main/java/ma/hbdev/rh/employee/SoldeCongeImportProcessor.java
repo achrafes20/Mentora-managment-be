@@ -27,7 +27,11 @@ class SoldeCongeImportProcessor {
   }
 
   ImportLigneResultat traiter(
-      int numeroLigne, Map<String, String> donnees, boolean dryRun, ImportSuiviLot suivi) {
+      int numeroLigne,
+      Map<String, String> donnees,
+      boolean dryRun,
+      ImportSuiviLot suivi,
+      StrategieDoublon strategieDoublon) {
     String email = valeur(donnees, "employeEmail");
     String commentaire = valeur(donnees, "commentaire");
     BigDecimal quantiteJours = ImportParseUtils.parserNombre(valeur(donnees, "quantiteJours"));
@@ -74,9 +78,18 @@ class SoldeCongeImportProcessor {
 
     UUID creePar = CurrentUser.id().orElse(null);
     if (existant != null) {
-      if (!dryRun) {
-        existant.mettreAJour(quantiteJours, commentaire);
+      if (strategieDoublon == StrategieDoublon.IGNORER) {
+        return new ImportLigneResultat(
+            numeroLigne,
+            StatutLigneImport.AVERTISSEMENT,
+            ActionLigneImport.IGNOREE,
+            donnees,
+            List.of("Solde initial déjà enregistré pour cet employé — ligne ignorée"),
+            existant.getId());
       }
+      // dryRun toujours exécuté (comme EmployeImportProcessor) : transaction REQUIRES_NEW annulée
+      // après coup côté ImportService quand dryRun est vrai.
+      existant.mettreAJour(quantiteJours, commentaire);
       return new ImportLigneResultat(
           numeroLigne,
           StatutLigneImport.VALIDE,
@@ -86,18 +99,15 @@ class SoldeCongeImportProcessor {
           existant.getId());
     }
 
-    UUID entiteId = null;
-    if (!dryRun) {
-      MouvementConge cree =
-          mouvementCongeRepository.save(
-              new MouvementConge(
-                  employe.getId(),
-                  TypeMouvementConge.initialisation,
-                  quantiteJours,
-                  commentaire,
-                  creePar));
-      entiteId = cree.getId();
-    }
+    MouvementConge cree =
+        mouvementCongeRepository.save(
+            new MouvementConge(
+                employe.getId(),
+                TypeMouvementConge.initialisation,
+                quantiteJours,
+                commentaire,
+                creePar));
+    UUID entiteId = cree.getId();
     return new ImportLigneResultat(
         numeroLigne, StatutLigneImport.VALIDE, ActionLigneImport.CREATION, donnees, null, entiteId);
   }
