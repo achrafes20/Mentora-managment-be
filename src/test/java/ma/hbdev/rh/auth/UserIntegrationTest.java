@@ -53,6 +53,18 @@ class UserIntegrationTest {
     // journal_audit référence utilisateurs (NFR-SEC-03, comptes désormais audités) : à vider
     // avant, sinon userRepository.deleteAll() ci-dessous viole la FK dès le 2e test.
     jdbcTemplate.execute("TRUNCATE TABLE journal_audit");
+    // EF-EMP-18 : un compte Manager créé par un test précédent (ex. adminCanCreateUser) laisse une
+    // fiche employes liée (employes.utilisateur_id) — userRepository.deleteAll() ci-dessous viole
+    // alors employes_utilisateur_id_fkey dès le test suivant. On délie plutôt que de supprimer la
+    // fiche (qui a elle-même des dépendants, ex. qr_codes) : seul le lien au compte doit
+    // disparaître
+    // avant de supprimer ce compte, la fiche employé elle-même n'a pas besoin d'être nettoyée.
+    jdbcTemplate.execute(
+        "UPDATE employes SET utilisateur_id = NULL WHERE utilisateur_id IS NOT NULL");
+    // EF-EMP-18 (suite) : depuis que la création d'un compte Manager assigne automatiquement le
+    // département vacant (cf. EmployeService#creerPourUtilisateur), le même souci se pose sur
+    // departements.manager_id — à délier avant userRepository.deleteAll() pour la même raison.
+    jdbcTemplate.execute("UPDATE departements SET manager_id = NULL WHERE manager_id IS NOT NULL");
     sessionRepository.deleteAll();
     userRepository.deleteAll();
 
@@ -119,9 +131,24 @@ class UserIntegrationTest {
 
   @Test
   void adminCanCreateUser() throws Exception {
+    // EF-EMP-18 : un Manager est aussi un employé — la fiche RH (departementId/poste/typeContrat/
+    // dateEmbauche) est désormais obligatoire à la création d'un compte Manager.
+    java.util.UUID departementId =
+        jdbcTemplate.queryForObject(
+            "insert into departements (nom) values ('Test Departement') returning id",
+            java.util.UUID.class);
     UserCreateRequest req =
         new UserCreateRequest(
-            "new.user@hbdev.ma", "SecurePass@123", RoleUtilisateur.manager, "New", "User");
+            "new.user@hbdev.ma",
+            "SecurePass@123",
+            RoleUtilisateur.manager,
+            "New",
+            "User",
+            null,
+            departementId,
+            "Chef d'équipe",
+            "CDI",
+            java.time.LocalDate.now());
 
     mockMvc
         .perform(

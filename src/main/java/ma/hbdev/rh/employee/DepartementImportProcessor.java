@@ -41,10 +41,10 @@ class DepartementImportProcessor {
           null);
     }
 
-    UUID entiteId = null;
-    if (!dryRun) {
-      entiteId = departementService.creer(new DepartementRequete(nom, null)).getId();
-    }
+    // dryRun toujours exécuté (comme EmployeImportProcessor) : transaction REQUIRES_NEW annulée
+    // après coup côté ImportService quand dryRun est vrai, rien n'est jamais persisté en
+    // simulation — mais la simulation bénéficie des mêmes règles de validation qu'un import réel.
+    UUID entiteId = departementService.creer(new DepartementRequete(nom, null)).getId();
     return new ImportLigneResultat(
         numeroLigne, StatutLigneImport.VALIDE, ActionLigneImport.CREATION, donnees, null, entiteId);
   }

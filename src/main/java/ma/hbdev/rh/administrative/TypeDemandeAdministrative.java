@@ -9,5 +9,11 @@ enum TypeDemandeAdministrative {
   conge_mariage,
   conge_naissance,
   conge_deces,
-  conge_maladie
+  conge_maladie,
+  // Simple ticket (motif libre obligatoire, même validation que "autre") signalant à l'Admin
+  // RH qu'un document est attendu — ex. "attestation de travail pour la banque". Aucune
+  // automatisation : l'Admin génère/envoie toujours le document depuis Documents RH
+  // (DocumentRhService), cette demande n'est qu'un point d'entrée centralisé, pas un
+  // déclencheur direct de génération.
+  demande_document
 }

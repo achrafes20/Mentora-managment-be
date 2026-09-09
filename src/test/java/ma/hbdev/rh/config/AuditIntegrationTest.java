@@ -71,6 +71,15 @@ class AuditIntegrationTest {
     jdbcTemplate.update("UPDATE configuration_parametres SET modifie_par = NULL");
     jdbcTemplate.execute(
         "TRUNCATE TABLE notifications_mattermost, notifications_in_app, journal_audit");
+    // EF-EMP-18 : un compte Manager créé par un test précédent (celui qui crée un compte via
+    // /api/users, cf. creationDeCompteEstAuditeeEtTrouvableParRechercheTexteLibre) laisse une
+    // fiche employes liée — même correctif que UserIntegrationTest#setUp.
+    jdbcTemplate.execute(
+        "UPDATE employes SET utilisateur_id = NULL WHERE utilisateur_id IS NOT NULL");
+    // EF-EMP-18 (suite) : depuis que la création d'un compte Manager assigne automatiquement le
+    // département vacant (cf. EmployeService#creerPourUtilisateur), même correctif requis sur
+    // departements.manager_id que ci-dessus pour employes.utilisateur_id.
+    jdbcTemplate.execute("UPDATE departements SET manager_id = NULL WHERE manager_id IS NOT NULL");
     sessionRepository.deleteAll();
     userRepository.deleteAll();
 
@@ -230,6 +239,14 @@ class AuditIntegrationTest {
   // la recherche par nom/e-mail, EF-CFG-04, ne trouve jamais rien).
   @Test
   void creationDeCompteEstAuditeeEtTrouvableParRechercheTexteLibre() throws Exception {
+    // EF-EMP-18 : un Manager est aussi un employé — la fiche RH (departementId/poste/typeContrat/
+    // dateEmbauche) est désormais obligatoire à la création d'un compte Manager (cf.
+    // UserIntegrationTest#adminCanCreateUser, même pattern).
+    java.util.UUID departementId =
+        jdbcTemplate.queryForObject(
+            "insert into departements (nom) values ('Audit Test Departement') returning id",
+            java.util.UUID.class);
+
     mockMvc
         .perform(
             post("/api/users")
@@ -238,8 +255,11 @@ class AuditIntegrationTest {
                 .content(
                     """
                     {"email":"nouveau.compte@hbdev.ma","motDePasse":"NouveauPass@2025",
-                     "role":"manager","nom":"Benali","prenom":"Yassir"}
-                    """))
+                     "role":"manager","nom":"Benali","prenom":"Yassir",
+                     "departementId":"%s","poste":"Chef d'équipe","typeContrat":"CDI",
+                     "dateEmbauche":"2026-01-01"}
+                    """
+                        .formatted(departementId)))
         .andExpect(status().isCreated());
 
     mockMvc

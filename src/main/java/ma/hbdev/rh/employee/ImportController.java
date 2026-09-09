@@ -45,20 +45,24 @@ public class ImportController {
   @PostMapping("/analyser")
   public ApiResponse<ImportRapportReponse> analyser(
       @RequestParam ImportCible cible,
+      @RequestParam(defaultValue = "ECRASER") StrategieDoublon strategieDoublon,
       @RequestPart MultipartFile fichier,
       @RequestPart Map<String, Integer> mapping) {
     return ApiResponse.ok(
-        ImportRapportReponse.depuis(importService.analyser(fichier, cible, mapping), objectMapper));
+        ImportRapportReponse.depuis(
+            importService.analyser(fichier, cible, mapping, strategieDoublon), objectMapper));
   }
 
   @PostMapping("/executer")
   public ApiResponse<ImportRapportReponse> executer(
       @RequestParam ImportCible cible,
+      @RequestParam(defaultValue = "ECRASER") StrategieDoublon strategieDoublon,
       @RequestPart MultipartFile fichier,
       @RequestPart Map<String, Integer> mapping) {
     return ApiResponse.ok(
         ImportRapportReponse.depuis(
-            importService.executerReellement(fichier, cible, mapping), objectMapper));
+            importService.executerReellement(fichier, cible, mapping, strategieDoublon),
+            objectMapper));
   }
 
   @GetMapping("/historique")

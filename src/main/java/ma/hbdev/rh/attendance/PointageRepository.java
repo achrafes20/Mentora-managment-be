@@ -33,6 +33,17 @@ interface PointageRepository
   @Query("SELECT p FROM Pointage p WHERE p.employeId = :employeId" + " ORDER BY p.horodatage DESC")
   Page<Pointage> findByEmployeId(@Param("employeId") UUID employeId, Pageable pageable);
 
+  // Filtre Entrée/Sortie de /api/kiosque/mes-pointages (EF-ATT-17) — méthode dédiée plutôt qu'un
+  // paramètre nullable sur findByEmployeId ci-dessus, qui a un autre appelant (listerParEmploye,
+  // Admin/Manager) dont le contrat ne doit pas changer.
+  @Query(
+      "SELECT p FROM Pointage p WHERE p.employeId = :employeId AND p.typeScan = :typeScan"
+          + " ORDER BY p.horodatage DESC")
+  Page<Pointage> findByEmployeIdAndTypeScan(
+      @Param("employeId") UUID employeId,
+      @Param("typeScan") TypeScanPointage typeScan,
+      Pageable pageable);
+
   @Query(
       "SELECT DISTINCT p.employeId FROM Pointage p WHERE p.horodatage >= :debut AND p.horodatage < :fin")
   List<UUID> findEmployeIdsAvecPointageEntre(

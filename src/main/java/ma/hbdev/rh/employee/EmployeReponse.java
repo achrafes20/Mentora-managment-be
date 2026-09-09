@@ -32,6 +32,7 @@ public record EmployeReponse(
     String rib,
     LocalDate periodeEssaiFinLe,
     java.math.BigDecimal salaireBrutMensuel,
+    UUID utilisateurId,
     Instant creeLe,
     Instant modifieLe) {
 
@@ -64,6 +65,7 @@ public record EmployeReponse(
         employe.getRib(),
         employe.getPeriodeEssaiFinLe(),
         employe.getSalaireBrutMensuel(),
+        employe.getUtilisateurId(),
         employe.getCreeLe(),
         employe.getModifieLe());
   }

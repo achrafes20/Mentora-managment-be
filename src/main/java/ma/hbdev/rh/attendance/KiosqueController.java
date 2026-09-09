@@ -2,9 +2,11 @@ package ma.hbdev.rh.attendance;
 
 import jakarta.validation.Valid;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import ma.hbdev.rh.shared.web.ApiResponse;
+import ma.hbdev.rh.shared.web.PagedResponse;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -72,14 +75,22 @@ public class KiosqueController {
   }
 
   /**
-   * EF-ATT-17 : historique perso affiché sur /pointage-mobile — 5 derniers pointages de l'employé
+   * EF-ATT-17 : historique perso paginé affiché sur /pointage-mobile — pointages de l'employé
    * propriétaire de l'appareil, pour qu'il vérifie qu'il n'a pas oublié de pointer.
    */
+  private static final int TAILLE_MES_POINTAGES_MAX = 50;
+
   @GetMapping("/mes-pointages")
-  public ApiResponse<List<PointageReponse>> mesPointages(
-      @RequestHeader(value = EN_TETE_JETON_APPAREIL, required = false) String jetonAppareil) {
+  public ApiResponse<PagedResponse<PointageReponse>> mesPointages(
+      @RequestHeader(value = EN_TETE_JETON_APPAREIL, required = false) String jetonAppareil,
+      @RequestParam(required = false) TypeScanPointage type,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "5") int taille) {
     UUID employeId = activationService.employeAppareilPersonnel(jetonAppareil);
-    return ApiResponse.ok(pointageService.pointagesRecents(employeId, 5));
+    int limite = Math.min(Math.max(taille, 1), TAILLE_MES_POINTAGES_MAX);
+    Pageable pageable = PageRequest.of(Math.max(page, 0), limite);
+    return ApiResponse.ok(
+        PagedResponse.of(pointageService.pointagesRecents(employeId, pageable, type)));
   }
 
   /**

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import ma.hbdev.rh.employee.EmployeService;
 import ma.hbdev.rh.shared.security.PasswordPolicy;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -32,6 +33,7 @@ public class UserService {
   private final PasswordEncoder passwordEncoder;
   private final PasswordPolicy passwordPolicy;
   private final ApplicationEventPublisher evenements;
+  private final EmployeService employeService;
 
   /** Retourne tous les utilisateurs (admin uniquement). */
   @Transactional(readOnly = true)
@@ -84,7 +86,14 @@ public class UserService {
         .orElseThrow(() -> new UserNotFoundException(id));
   }
 
-  /** EF-AUTH-16 : Création d'un compte admin ou manager. */
+  /**
+   * EF-AUTH-16 : Création d'un compte admin ou manager.
+   *
+   * <p>EF-EMP-18 : un Manager est aussi un employé — sa fiche RH (département/poste/type de
+   * contrat/date d'embauche) est créée dans la même transaction que son compte, et liée via {@code
+   * employes.utilisateur_id}. Un Admin n'a pas besoin de fiche RH, ces champs sont ignorés pour ce
+   * rôle.
+   */
   @Transactional
   public UserResponse create(UserCreateRequest request) {
     if (userRepository.findByEmail(request.email()).isPresent()) {
@@ -95,6 +104,10 @@ public class UserService {
       throw new IllegalArgumentException(
           "Le mot de passe ne respecte pas la politique de sécurité "
               + "(min. 10 caractères, majuscule, minuscule, chiffre).");
+    }
+
+    if (request.role() == RoleUtilisateur.manager) {
+      validerFicheRhManager(request);
     }
 
     User user = new User();
@@ -109,9 +122,37 @@ public class UserService {
     user.setModifieLe(Instant.now());
 
     User saved = userRepository.save(user);
+
+    if (request.role() == RoleUtilisateur.manager) {
+      employeService.creerPourUtilisateur(
+          request.nom(),
+          request.prenom(),
+          request.email(),
+          request.departementId(),
+          request.poste(),
+          request.typeContrat(),
+          request.dateEmbauche(),
+          saved.getId());
+    }
+
     evenements.publishEvent(CompteEvent.creation(saved.getId(), saved.getEmail()));
     log.info("Compte créé : {} ({})", saved.getEmail(), saved.getRole());
     return UserResponse.fromUser(saved);
+  }
+
+  private void validerFicheRhManager(UserCreateRequest request) {
+    if (request.departementId() == null) {
+      throw new IllegalArgumentException("Le département est obligatoire pour un Manager.");
+    }
+    if (request.poste() == null || request.poste().isBlank()) {
+      throw new IllegalArgumentException("Le poste est obligatoire pour un Manager.");
+    }
+    if (request.typeContrat() == null || request.typeContrat().isBlank()) {
+      throw new IllegalArgumentException("Le type de contrat est obligatoire pour un Manager.");
+    }
+    if (request.dateEmbauche() == null) {
+      throw new IllegalArgumentException("La date d'embauche est obligatoire pour un Manager.");
+    }
   }
 
   /** Mise à jour du rôle, nom, prénom. */

@@ -66,6 +66,12 @@ sql() {
   docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -q
 }
 
+sql_valeur() {
+  # Comme sql() mais -t -A (tuples seuls, non alignés) : renvoie une valeur unique exploitable
+  # directement en shell (ex. SELECT id FROM ... LIMIT 1), sans en-tête ni bordures.
+  docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -tAq
+}
+
 echo "==> Attente du backend ($API)..."
 i=0
 while [ "$i" -lt 30 ]; do
@@ -123,13 +129,18 @@ curl -s -X POST "$API/api/config/identite-entreprise/logo" \
 curl -s -X POST "$API/api/config/identite-entreprise/signature" \
   -H "Authorization: Bearer $TOKEN" -F "signature=@$LOGO_PNG" >/dev/null
 
+# EF-EMP-18 : un Manager est aussi un employé — departementId/poste/dateEmbauche obligatoires
+# désormais pour créer un compte Manager (fiche RH créée avec le compte, cf. UserService#create).
 creer_manager() {
   email=$1
   nom=$2
   prenom=$3
+  departement_id=$4
+  poste=$5
+  date_embauche=$6
   echo "==> Manager $prenom $nom ($email)..." >&2
   poster_json "$API/api/users" \
-    "{\"email\":\"$email\",\"motDePasse\":\"$MANAGER_PASSWORD\",\"role\":\"manager\",\"nom\":\"$nom\",\"prenom\":\"$prenom\"}" \
+    "{\"email\":\"$email\",\"motDePasse\":\"$MANAGER_PASSWORD\",\"role\":\"manager\",\"nom\":\"$nom\",\"prenom\":\"$prenom\",\"departementId\":\"$departement_id\",\"poste\":\"$poste\",\"typeContrat\":\"CDI\",\"dateEmbauche\":\"$date_embauche\"}" \
     | extraire_id
 }
 
@@ -143,6 +154,18 @@ creer_departement() {
     body="{\"nom\":\"$nom\"}"
   fi
   poster_json "$API/api/departements" "$body" | extraire_id
+}
+
+# Rattache après coup le Manager au département qu'il gère — le département doit exister avant de
+# pouvoir servir de fiche RH au Manager (creer_manager ci-dessus), donc l'ordre est nécessairement
+# département (sans manager) -> manager (avec ce département comme fiche RH) -> rattachement.
+assigner_manager_departement() {
+  departement_id=$1
+  nom=$2
+  manager_id=$3
+  echo "==> Rattachement du manager au département $nom..." >&2
+  mettre_a_jour_json "$API/api/departements/$departement_id" \
+    "{\"nom\":\"$nom\",\"managerId\":\"$manager_id\"}" >/dev/null
 }
 
 # $1 nom $2 prenom $3 email $4 poste $5 departementId $6 managerId $7 dateEmbauche
@@ -162,25 +185,49 @@ creer_employe() {
 # 1. Managers, départements, employés (volume et types variés)
 # ─────────────────────────────────────────────────────────────────────
 
-KARIM_ID=$(creer_manager "karim.bennani@hbdev.ma" "Bennani" "Karim")
-SARA_ID=$(creer_manager "sara.alaoui@hbdev.ma" "Alaoui" "Sara")
-YOUSSEF_ID=$(creer_manager "youssef.amrani@hbdev.ma" "Amrani" "Youssef")
+# Un seul département géré par manager (EmployeService.departementGereParManagerCourant()
+# suppose exactement un département par manager). Créés sans manager dans un premier temps : un
+# Manager est désormais aussi un employé (EF-EMP-18), sa fiche RH a besoin d'un departementId
+# existant au moment de la création du compte.
+INGENIERIE_ID=$(creer_departement "Ingénierie" "")
+RH_ID=$(creer_departement "Ressources Humaines" "")
+FINANCE_ID=$(creer_departement "Finance" "")
+
+if [ -z "$INGENIERIE_ID" ] || [ -z "$RH_ID" ] || [ -z "$FINANCE_ID" ]; then
+  echo "ERREUR : création d'un département a échoué, arrêt du seed (employés non créés)."
+  exit 1
+fi
+
+DATE_EMBAUCHE_MANAGER=$(date -d "-800 days" +%Y-%m-%d)
+
+KARIM_ID=$(creer_manager "karim.bennani@hbdev.ma" "Bennani" "Karim" \
+  "$INGENIERIE_ID" "Manager Ingénierie" "$DATE_EMBAUCHE_MANAGER")
+SARA_ID=$(creer_manager "sara.alaoui@hbdev.ma" "Alaoui" "Sara" \
+  "$RH_ID" "Manager Ressources Humaines" "$DATE_EMBAUCHE_MANAGER")
+YOUSSEF_ID=$(creer_manager "youssef.amrani@hbdev.ma" "Amrani" "Youssef" \
+  "$FINANCE_ID" "Manager Finance" "$DATE_EMBAUCHE_MANAGER")
 
 if [ -z "$KARIM_ID" ] || [ -z "$SARA_ID" ] || [ -z "$YOUSSEF_ID" ]; then
   echo "ERREUR : création d'un compte Manager a échoué, arrêt du seed."
   exit 1
 fi
 
-# Un seul département géré par manager (EmployeService.departementGereParManagerCourant()
-# suppose exactement un département par manager).
-INGENIERIE_ID=$(creer_departement "Ingénierie" "$KARIM_ID")
-RH_ID=$(creer_departement "Ressources Humaines" "$SARA_ID")
-FINANCE_ID=$(creer_departement "Finance" "$YOUSSEF_ID")
+assigner_manager_departement "$INGENIERIE_ID" "Ingénierie" "$KARIM_ID"
+assigner_manager_departement "$RH_ID" "Ressources Humaines" "$SARA_ID"
+assigner_manager_departement "$FINANCE_ID" "Finance" "$YOUSSEF_ID"
 
-if [ -z "$INGENIERIE_ID" ] || [ -z "$RH_ID" ] || [ -z "$FINANCE_ID" ]; then
-  echo "ERREUR : création d'un département a échoué, arrêt du seed (employés non créés)."
-  exit 1
-fi
+# EF-EMP-18 : /api/users renvoie l'id du compte de connexion (utilisateurs.id) — utilisable comme
+# managerId (c'est bien ce que référence employes.manager_id), mais PAS comme employeId pour une
+# demande administrative sur la fiche RH du Manager lui-même, qui a son propre id (employes.id,
+# différent). Recherche par e-mail (unique) sur /api/employes pour le retrouver.
+obtenir_employe_id_par_email() {
+  curl -s -G "$API/api/employes" \
+    -H "Authorization: Bearer $TOKEN" \
+    --data-urlencode "recherche=$1" --data-urlencode "size=1" \
+    | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4
+}
+
+KARIM_EMPLOYE_ID=$(obtenir_employe_id_par_email "karim.bennani@hbdev.ma")
 
 J=$(date -d "-60 days" +%Y-%m-%d)
 J10=$(date -d "+10 days" +%Y-%m-%d)
@@ -449,6 +496,35 @@ fi
 [ -n "$D6" ] && patch_vide "$API/api/demandes-administratives/$D6/approuver"
 # D7, D8 restent "en_attente" pour varier les statuts affichés.
 
+echo "==> Bon de sortie, demande « Autre », demande de document, congé d'un Manager..."
+
+D10=$(poster_json "$API/api/demandes-administratives" \
+  "{\"employeId\":\"$AMINE_ID\",\"typeDemande\":\"bon_sortie\",\"dateDebut\":\"$(date -d '+1 days' +%Y-%m-%d)\",\"heureDepart\":\"14:00:00\",\"heureRetourPrevue\":\"16:30:00\",\"motif\":\"Rendez-vous à la banque\"}" \
+  | extraire_id)
+
+D11=$(poster_json "$API/api/demandes-administratives" \
+  "{\"employeId\":\"$GHITA_ID\",\"typeDemande\":\"autre\",\"motif\":\"Demande de badge d'accès parking\"}" \
+  | extraire_id)
+
+# EF-ADM-15 : laissée "en_attente" à dessein — c'est le scénario de démo pour le bouton
+# "Envoyer un document" (DemandesPage#EnvoyerDocumentModal), qui remplace Approuver pour ce type.
+D12=$(poster_json "$API/api/demandes-administratives" \
+  "{\"employeId\":\"$NADIA_ID\",\"typeDemande\":\"demande_document\",\"motif\":\"Attestation de travail pour un dossier bancaire\"}" \
+  | extraire_id)
+
+# EF-EMP-18 : un Manager est aussi un employé — démontre qu'il peut lui-même poser un congé comme
+# n'importe quel employé, sur sa propre fiche RH créée avec son compte.
+# Fenêtre de 5 jours (pas 2) : garantit au moins un jour ouvré quel que soit le jour d'exécution
+# du seed — un congé de 2 jours calendaires tombant intégralement sur un week-end donnerait une
+# durée ouvrée nulle et ferait échouer la création ("La durée du congé doit être positive").
+D13=$(poster_json "$API/api/demandes-administratives" \
+  "{\"employeId\":\"$KARIM_EMPLOYE_ID\",\"typeDemande\":\"conge\",\"granularite\":\"journee\",\"dateDebut\":\"$(date -d '+12 days' +%Y-%m-%d)\",\"dateFin\":\"$(date -d '+16 days' +%Y-%m-%d)\",\"motif\":\"Congés annuels\"}" \
+  | extraire_id)
+
+[ -n "$D10" ] && patch_vide "$API/api/demandes-administratives/$D10/approuver"
+[ -n "$D13" ] && patch_vide "$API/api/demandes-administratives/$D13/approuver"
+# D11, D12 restent "en_attente".
+
 # ─────────────────────────────────────────────────────────────────────
 # 5. Recrutement
 # ─────────────────────────────────────────────────────────────────────
@@ -506,14 +582,65 @@ C6=$(ingerer_candidature "karim.jabri@example.com" "Karim Jabri" "Candidature As
 
 # C4, C6 restent "recu" — file d'attente de tri initial.
 
+# ─────────────────────────────────────────────────────────────────────
+# 6. Blocage des congés (EF-ADM-12, Admin uniquement)
+# ─────────────────────────────────────────────────────────────────────
+
+echo "==> Période de blocage des congés..."
+# Fenêtre volontairement loin (+200/+210 jours) : ne doit chevaucher aucune des demandes de congé
+# déjà créées ci-dessus (toutes entre +2 et +33 jours), sinon leur création aurait échoué.
+poster_json "$API/api/demandes-administratives/periodes-blocage-conges" \
+  "{\"dateDebut\":\"$(date -d '+200 days' +%Y-%m-%d)\",\"dateFin\":\"$(date -d '+210 days' +%Y-%m-%d)\",\"libelle\":\"Période de forte activité — congés suspendus\"}" \
+  >/dev/null
+
+# ─────────────────────────────────────────────────────────────────────
+# 7. Délégation temporaire d'approbation (EF-AUTH-11/12, Admin uniquement)
+# ─────────────────────────────────────────────────────────────────────
+
+echo "==> Délégation active (Admin -> Sara Alaoui)..."
+poster_json "$API/api/delegations" \
+  "{\"delegueId\":\"$SARA_ID\",\"dateDebut\":\"$(date -d '-1 days' +%Y-%m-%d)\",\"dateFin\":\"$(date -d '+7 days' +%Y-%m-%d)\"}" \
+  >/dev/null
+
+# ─────────────────────────────────────────────────────────────────────
+# 8. Variété de statuts d'activation kiosque (pointage mobile)
+# ─────────────────────────────────────────────────────────────────────
+
+# Chaque employé reçoit déjà un code personnel "en_attente" à sa création (cf. §1) — sans ce qui
+# suit, KiosqueActivationsPanel n'afficherait jamais que ce seul statut en démo. "Active" n'a pas
+# de chemin applicatif simulable simplement (il faudrait saisir le vrai code reçu par e-mail sur
+# /pointage-mobile) : laissé de côté plutôt que de fragiliser le seed avec une dépendance à
+# l'API Mailpit. "Révoquée" (chemin applicatif réel) et "Expirée" (aucun chemin applicatif — même
+# exception assumée que le backdating des pointages, cf. en-tête de ce fichier) sont couvertes.
+echo "==> Variété de statuts d'activation kiosque (Révoquée, Expirée)..."
+
+ACTIVATION_ID_GHITA=$(printf '%s' \
+  "SELECT id FROM kiosque_activations WHERE employe_id = '$GHITA_ID' LIMIT 1;" | sql_valeur)
+if [ -n "$ACTIVATION_ID_GHITA" ]; then
+  curl -s -X POST "$API/api/kiosque/activations/$ACTIVATION_ID_GHITA/revoquer" \
+    -H "Authorization: Bearer $TOKEN" >/dev/null
+fi
+
+sql <<SQLEOF
+UPDATE kiosque_activations SET emis_le = now() - interval '30 hours'
+WHERE employe_id = '$MERYEM_ID';
+SQLEOF
+
 echo "==> Seed terminé."
 echo "    Admin   : $ADMIN_EMAIL / $ADMIN_PASSWORD"
 echo "    Manager : karim.bennani@hbdev.ma / $MANAGER_PASSWORD (Ingénierie)"
 echo "    Manager : sara.alaoui@hbdev.ma / $MANAGER_PASSWORD (Ressources Humaines)"
 echo "    Manager : youssef.amrani@hbdev.ma / $MANAGER_PASSWORD (Finance)"
-echo "    10 employés (dont 3 stagiaires, 1 CDD, 1 désactivé), 20 jours de pointages,"
-echo "    anomalies, 2 jours fériés, 9 demandes de congé (dont mariage/naissance/décès/maladie),"
-echo "    4 offres (1 catégorisée « Stagiaires »), 6 candidatures, conformité RH Maroc et"
-echo "    salaire renseignés sur 2 fiches, attestation de salaire générée, QR de site pour le"
-echo "    pointage mobile. Un code de pointage mobile personnel a aussi été envoyé par e-mail"
-echo "    (Mailpit) à chacun des 10 employés à leur création."
+echo "    10 employés (dont 3 stagiaires, 1 CDD, 1 désactivé) + 3 Managers ayant chacun leur"
+echo "    propre fiche RH (EF-EMP-18), 20 jours de pointages, anomalies, 2 jours fériés,"
+echo "    13 demandes administratives (congé, bon de sortie, autre, demande de document,"
+echo "    congés mariage/naissance/décès/maladie, dont un congé posé par un Manager sur sa"
+echo "    propre fiche), 4 offres (1 catégorisée « Stagiaires »), 6 candidatures, conformité"
+echo "    RH Maroc et salaire renseignés sur 2 fiches, attestation de salaire générée, QR de"
+echo "    site pour le pointage mobile. Un code de pointage mobile personnel a aussi été"
+echo "    envoyé par e-mail (Mailpit) à chacun des 10 employés à leur création."
+echo "    Demande de document « en_attente » sur Nadia Fassi : à traiter via le bouton"
+echo "    « Envoyer un document » (Demandes / approbation) pour tester ce flux."
+echo "    Période de blocage des congés (+200/+210j), délégation active Admin -> Sara Alaoui"
+echo "    (Ressources Humaines, aujourd'hui -> +7j), activations kiosque variées (Ghita Alami"
+echo "    révoquée, Meryem El Fassi expirée) pour démontrer les filtres de chaque écran."
