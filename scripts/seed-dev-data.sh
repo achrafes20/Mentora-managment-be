@@ -66,6 +66,12 @@ sql() {
   docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -q
 }
 
+sql_valeur() {
+  # Comme sql() mais -t -A (tuples seuls, non alignés) : renvoie une valeur unique exploitable
+  # directement en shell (ex. SELECT id FROM ... LIMIT 1), sans en-tête ni bordures.
+  docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -tAq
+}
+
 echo "==> Attente du backend ($API)..."
 i=0
 while [ "$i" -lt 30 ]; do
@@ -576,6 +582,50 @@ C6=$(ingerer_candidature "karim.jabri@example.com" "Karim Jabri" "Candidature As
 
 # C4, C6 restent "recu" — file d'attente de tri initial.
 
+# ─────────────────────────────────────────────────────────────────────
+# 6. Blocage des congés (EF-ADM-12, Admin uniquement)
+# ─────────────────────────────────────────────────────────────────────
+
+echo "==> Période de blocage des congés..."
+# Fenêtre volontairement loin (+200/+210 jours) : ne doit chevaucher aucune des demandes de congé
+# déjà créées ci-dessus (toutes entre +2 et +33 jours), sinon leur création aurait échoué.
+poster_json "$API/api/demandes-administratives/periodes-blocage-conges" \
+  "{\"dateDebut\":\"$(date -d '+200 days' +%Y-%m-%d)\",\"dateFin\":\"$(date -d '+210 days' +%Y-%m-%d)\",\"libelle\":\"Période de forte activité — congés suspendus\"}" \
+  >/dev/null
+
+# ─────────────────────────────────────────────────────────────────────
+# 7. Délégation temporaire d'approbation (EF-AUTH-11/12, Admin uniquement)
+# ─────────────────────────────────────────────────────────────────────
+
+echo "==> Délégation active (Admin -> Sara Alaoui)..."
+poster_json "$API/api/delegations" \
+  "{\"delegueId\":\"$SARA_ID\",\"dateDebut\":\"$(date -d '-1 days' +%Y-%m-%d)\",\"dateFin\":\"$(date -d '+7 days' +%Y-%m-%d)\"}" \
+  >/dev/null
+
+# ─────────────────────────────────────────────────────────────────────
+# 8. Variété de statuts d'activation kiosque (pointage mobile)
+# ─────────────────────────────────────────────────────────────────────
+
+# Chaque employé reçoit déjà un code personnel "en_attente" à sa création (cf. §1) — sans ce qui
+# suit, KiosqueActivationsPanel n'afficherait jamais que ce seul statut en démo. "Active" n'a pas
+# de chemin applicatif simulable simplement (il faudrait saisir le vrai code reçu par e-mail sur
+# /pointage-mobile) : laissé de côté plutôt que de fragiliser le seed avec une dépendance à
+# l'API Mailpit. "Révoquée" (chemin applicatif réel) et "Expirée" (aucun chemin applicatif — même
+# exception assumée que le backdating des pointages, cf. en-tête de ce fichier) sont couvertes.
+echo "==> Variété de statuts d'activation kiosque (Révoquée, Expirée)..."
+
+ACTIVATION_ID_GHITA=$(printf '%s' \
+  "SELECT id FROM kiosque_activations WHERE employe_id = '$GHITA_ID' LIMIT 1;" | sql_valeur)
+if [ -n "$ACTIVATION_ID_GHITA" ]; then
+  curl -s -X POST "$API/api/kiosque/activations/$ACTIVATION_ID_GHITA/revoquer" \
+    -H "Authorization: Bearer $TOKEN" >/dev/null
+fi
+
+sql <<SQLEOF
+UPDATE kiosque_activations SET emis_le = now() - interval '30 hours'
+WHERE employe_id = '$MERYEM_ID';
+SQLEOF
+
 echo "==> Seed terminé."
 echo "    Admin   : $ADMIN_EMAIL / $ADMIN_PASSWORD"
 echo "    Manager : karim.bennani@hbdev.ma / $MANAGER_PASSWORD (Ingénierie)"
@@ -591,3 +641,6 @@ echo "    site pour le pointage mobile. Un code de pointage mobile personnel a a
 echo "    envoyé par e-mail (Mailpit) à chacun des 10 employés à leur création."
 echo "    Demande de document « en_attente » sur Nadia Fassi : à traiter via le bouton"
 echo "    « Envoyer un document » (Demandes / approbation) pour tester ce flux."
+echo "    Période de blocage des congés (+200/+210j), délégation active Admin -> Sara Alaoui"
+echo "    (Ressources Humaines, aujourd'hui -> +7j), activations kiosque variées (Ghita Alami"
+echo "    révoquée, Meryem El Fassi expirée) pour démontrer les filtres de chaque écran."
